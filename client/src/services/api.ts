@@ -1,7 +1,7 @@
 import axios from "axios";
 import { Images } from "lucide-react";
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'https://sih-hackthon-g8l7.onrender.com/api';
 
 
 class ApiService {
@@ -133,7 +133,7 @@ class ApiService {
     }
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.post('http://localhost:5000/api/issues',formData,{
+      const res = await axios.post('https://sih-hackthon-g8l7.onrender.com/api/issues',formData,{
         headers:{
           Authorization:`Bearer ${token}`
         }
