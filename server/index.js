@@ -5,7 +5,7 @@ import config from './config.js';
 import authRoutes from './routes/auth.js';
 import issueRoutes from './routes/issues.js';
 const app = express();
-const PORT = config.PORT || 5000;
+const PORT = config.PORT || 8080;
 
 // Middleware
 app.use(cors());

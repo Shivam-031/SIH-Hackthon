@@ -9,7 +9,7 @@ export default {
   JWT_SECRET: 'civicconnect-super-secret-jwt-key-2024-secure-auth-token',
   
   // Server Port
-  PORT: 5000,
+  PORT: 8080,
   
   // Environment
   NODE_ENV: 'development'
