@@ -19,7 +19,7 @@ const authenticateToken = (req, res, next) => {
   if (!token) {
     return res.status(401).json({ message: 'No token provided' });
   }
-  
+
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
@@ -34,31 +34,31 @@ const authenticateToken = (req, res, next) => {
 
 
 const storage = multer.diskStorage(({
-  destination: (req,file,cb)=>{
-    cb(null,`./uploaded-photo`);
+  destination: (req, file, cb) => {
+    cb(null, `./uploaded-photo`);
   },
-  filename: (req,file,cb)=>{
-    cb(null,Date.now()+"-"+file.originalname.trim());
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "-" + file.originalname.trim());
   }
 }))
-const upload = multer({storage});
+const upload = multer({ storage });
 
 // Create a new issue
 
-router.post('/',upload.array('images',5),authenticateToken,  async (req, res) => {
+router.post('/', upload.array('images', 5), authenticateToken, async (req, res) => {
   try {
     const { title, description, category, location } = req.body;
-    let images ;
-    if(req.files){
+    let images;
+    if (req.files) {
       images = req.files.map(f => {
-        return {"path":f.path, "filename":f.filename};
+        return { "path": f.path, "filename": f.filename };
       });
-    }else{
+    } else {
       images = [];
     }
     console.log(req.body);
-    console.log( images);
-    console.log( req.files );
+    console.log(images);
+    console.log(req.files);
     const issue = new Issue({
       title,
       description,
@@ -68,7 +68,7 @@ router.post('/',upload.array('images',5),authenticateToken,  async (req, res) =>
         longitude: location.split(',')[1].trim(),
         address: req.body.address || ''
       },
-      images:images,
+      images: images,
       reportedBy: req.user.userId
     });
     // console.log(issue);
@@ -245,38 +245,43 @@ router.post('/:id/upvote', authenticateToken, async (req, res) => {
 
 // for image fetching from frontend 
 
-router.get("/image/:address", async (req, res) => { 
+router.get("/image/:address", async (req, res) => {
   const fileName = req.params.address;
-  const filePath = path.join(`${__dirname}../../../`,'uploaded-photo',fileName);
-     fs.access(filePath, fs.constants.F_OK, (err) => {
-        if (err) {
-            console.error('Image not found:', err);
-            return res.status(404).send('Image not found');
-        }
+  const filePath = path.join(
+    __dirname,
+    '.././uploaded-photo',
+    fileName
+  );
+  console.log(filePath)
+  fs.access(filePath, fs.constants.F_OK, (err) => {
+    if (err) {
+      console.error('Image not found:', err);
+      return res.status(404).send('Image not found');
+    }
 
-        const stat = fs.statSync(filePath);
-        
-        const type = path.extname(filePath);
-        res.writeHead(200, {
-            'Content-Type': `image/${type}`, // Adjust based on your image type
-            'Content-Length': stat.size
-        });
+    const stat = fs.statSync(filePath);
 
-        const readStream = fs.createReadStream(filePath);
-        readStream.pipe(res);
-
-        readStream.on('error', (err) => {
-            console.error('Error streaming image:', err);
-            res.status(500).send('Error serving image');
-        });
+    const type = path.extname(filePath);
+    res.writeHead(200, {
+      'Content-Type': `image/${type}`, // Adjust based on your image type
+      'Content-Length': stat.size
     });
-  
+
+    const readStream = fs.createReadStream(filePath);
+    readStream.pipe(res);
+
+    readStream.on('error', (err) => {
+      console.error('Error streaming image:', err);
+      res.status(500).send('Error serving image');
+    });
+  });
+
   // try {
-  //   if(fs.existsSync(filePath)) {
+  //   if (fs.existsSync(filePath)) {
   //     res.sendFile(filePath);
   //   }
   //   else {
-  //     res.status(404).json({ message:"file not found"})
+  //     res.status(404).json({ message: "file not found" })
   //   }
   // } catch (error) {
   //   console.log(error);
