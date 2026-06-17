@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import config from './server/config.js';
+// import config from './server/config.js';
 import Issue from './server/models/Issue.js';
 import User from './server/models/User.js';
 
@@ -7,7 +7,7 @@ async function viewDatabaseIssues() {
   try {
     // Connect to MongoDB
     console.log('🔌 Connecting to MongoDB...');
-    await mongoose.connect(config.MONGODB_URI);
+    await mongoose.connect(process.env.MONGODB_URI);
     console.log('✅ Connected to MongoDB Atlas');
 
     // Get all issues with populated user data

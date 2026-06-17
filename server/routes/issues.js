@@ -2,7 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import Issue from '../models/Issue.js';
 import User from '../models/User.js';
-import config from '../config.js';
+// import config from '../config.js';
 import multer from "multer";
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const router = express.Router();
 
-const JWT_SECRET = config.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // Middleware to verify JWT token
 const authenticateToken = (req, res, next) => {
