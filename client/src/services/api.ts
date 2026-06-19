@@ -1,8 +1,6 @@
-import axios from "axios";
-import { Images } from "lucide-react";
+import type { Issue, User, Notification, Pagination } from '../types';
 
-const API_BASE_URL = 'https://sih-hackthon-g8l7.onrender.com/api';
-
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 class ApiService {
   private baseURL: string;
@@ -11,209 +9,210 @@ class ApiService {
     this.baseURL = baseURL;
   }
 
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    const url = `${this.baseURL}${endpoint}`;
-    
-    const config: RequestInit = {
-      headers: {
-        'content-type':'application/json',
-        ...options.headers,
-      },
-      ...options,
-    };
-
-    // Add auth token if available
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers = {
-        ...config.headers,
-        Authorization: `Bearer ${token}`,
-
-      };
-    }
-
-    try {
-      const response = await fetch(url, config);
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('API request failed:', error);
-      throw error;
-    }
+  private getToken(): string | null {
+    return localStorage.getItem('token');
   }
 
-  // Authentication methods
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const url = `${this.baseURL}${endpoint}`;
+    const token = this.getToken();
+
+    const headers: Record<string, string> = {};
+    // Don't set Content-Type for FormData — browser sets it with boundary
+    if (!(options.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+    }
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const config: RequestInit = {
+      ...options,
+      headers: { ...headers, ...(options.headers as Record<string, string>) },
+    };
+
+    const response = await fetch(url, config);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  // ── Auth ────────────────────────────────────────────────────────────────────
+
   async register(userData: {
-    name: string;
-    email: string;
-    password: string;
-    phone?: string;
-    role?: 'citizen' | 'official';
+    name: string; email: string; password: string;
+    phone?: string; role?: 'citizen' | 'official' | 'admin';
   }) {
-    return this.request<{
-      message: string;
-      token: string;
-      user: {
-        id: string;
-        name: string;
-        email: string;
-        role: string;
-        phone?: string;
-        civicScore: number;
-        verified: boolean;
-      };
-    }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(userData),
-    });
+    return this.request<{ success: boolean; message: string; data: { token: string; refreshToken: string; user: User } }>(
+      '/auth/register', { method: 'POST', body: JSON.stringify(userData) }
+    );
   }
 
   async login(email: string, password: string) {
-    const formData = new FormData();
-    formData.append("email", JSON.stringify(email));
-    formData.append("password", JSON.stringify(password));
-    return this.request<{
-      message: string;
-      token: string;
-      user: {
-        id: string;
-        name: string;
-        email: string;
-        role: string;
-        phone?: string;
-        civicScore: number;
-        verified: boolean;
-      };
-    }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({email, password})
-    });
+    return this.request<{ success: boolean; message: string; data: { token: string; refreshToken: string; user: User } }>(
+      '/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }
+    );
+  }
+
+  async sendOTP(email: string, name?: string) {
+    return this.request<{ success: boolean; message: string }>(
+      '/auth/send-otp', { method: 'POST', body: JSON.stringify({ email, name }) }
+    );
+  }
+
+  async verifyOTP(email: string, otp: string) {
+    return this.request<{ success: boolean; message: string }>(
+      '/auth/verify-otp', { method: 'POST', body: JSON.stringify({ email, otp }) }
+    );
+  }
+
+  async googleLogin(credential: string) {
+    return this.request<{ success: boolean; message: string; data: { token: string; refreshToken: string; user: User } }>(
+      '/auth/google', { method: 'POST', body: JSON.stringify({ credential }) }
+    );
+  }
+
+  async logout() {
+    return this.request<{ success: boolean }>('/auth/logout', { method: 'POST' });
   }
 
   async getProfile() {
-    return this.request<{
-      user: {
-        id: string;
-        name: string;
-        email: string;
-        role: string;
-        phone?: string;
-        civicScore: number;
-        verified: boolean;
-      };
-    }>('/auth/profile');
+    return this.request<{ success: boolean; data: { user: User } }>('/auth/profile');
   }
 
-  // Issue methods
-  async createIssue(issueData: {
-    title: string;
-    description: string;
-    category: string;
-    location: string;
-    address?: string;
-    images?: object[];
-  }) {
-    const formData = new FormData();
-    
-    formData.append("title", issueData.title);
-    formData.append("description", issueData.description);
-    formData.append("category", issueData.category);
-    formData.append("location", issueData.location);
-    formData.append("address", issueData.address);
-    for (const image of issueData.images) {
-      formData.append("images", image); 
-    }
-    try {
-      const token = localStorage.getItem('token');
-      const res = await axios.post('https://sih-hackthon-g8l7.onrender.com/api/issues',formData,{
-        headers:{
-          Authorization:`Bearer ${token}`
-        }
-      });
-      console.log("Upload Successfull",res);
-    } catch (error) {
-      console.error("error", error);
-    }
-  //   return this.request<{
-  //     message: string;
-  //     issue: any;
-  //   }>('/issues', {
-  //     method: 'POST',
-  //     body: formData,
-  //   }
-  // );
+  async updateProfile(formData: FormData) {
+    return this.request<{ success: boolean; data: { user: User } }>(
+      '/auth/profile', { method: 'PATCH', body: formData }
+    );
   }
 
-  async getIssues(page: number = 1, limit: number = 10) {
-    return this.request<{
-      issues: any[];
-      pagination: {
-        page: number;
-        limit: number;
-        total: number;
-        pages: number;
-      };
-    }>(`/issues?page=${page}&limit=${limit}`);
+  // ── Issues ──────────────────────────────────────────────────────────────────
+
+  async getIssues(params: {
+    page?: number; limit?: number; status?: string;
+    category?: string; severity?: string; search?: string;
+    sortBy?: string; order?: string;
+  } = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => v !== undefined && query.set(k, String(v)));
+    return this.request<{ success: boolean; data: { issues: Issue[]; pagination: Pagination } }>(
+      `/issues?${query}`
+    );
   }
 
   async getMyIssues() {
-    return this.request<{
-      issues: any[];
-    }>('/issues/my-issues');
+    return this.request<{ success: boolean; data: { issues: Issue[] } }>('/issues/my-issues');
+  }
+
+  async getNearbyIssues(latitude: number, longitude: number, radius = 5000) {
+    return this.request<{ success: boolean; data: { issues: Issue[] } }>(
+      `/issues/nearby?latitude=${latitude}&longitude=${longitude}&radius=${radius}`
+    );
   }
 
   async getIssue(id: string) {
-    return this.request<{
-      issue: any;
-    }>(`/issues/${id}`);
+    return this.request<{ success: boolean; data: { issue: Issue } }>(`/issues/${id}`);
   }
 
-  async updateIssueStatus(id: string, status: string, assignedTo?: string) {
-    return this.request<{
-      message: string;
-      issue: any;
-    }>(`/issues/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status, assignedTo }),
-    });
+  async createIssue(formData: FormData) {
+    return this.request<{ success: boolean; data: { issue: Issue } }>(
+      '/issues', { method: 'POST', body: formData }
+    );
   }
 
-  async addComment(issueId: string, text: string) {
-    return this.request<{
-      message: string;
-      issue: any;
-    }>(`/issues/${issueId}/comments`, {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    });
+  async updateIssueStatus(id: string, status: string, adminRemarks?: string, assignedDepartment?: string) {
+    return this.request<{ success: boolean; data: { issue: Issue } }>(
+      `/issues/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, adminRemarks, assignedDepartment }),
+      }
+    );
   }
 
-  async upvoteIssue(issueId: string) {
-    return this.request<{
-      message: string;
-      upvotes: number;
-    }>(`/issues/${issueId}/upvote`, {
-      method: 'POST',
-    });
+  async upvoteIssue(id: string) {
+    return this.request<{ success: boolean; data: { upvotes: number } }>(
+      `/issues/${id}/upvote`, { method: 'POST' }
+    );
   }
 
-  // Health check
+  async verifyIssue(id: string, comment?: string) {
+    return this.request<{ success: boolean; data: { verificationCount: number } }>(
+      `/issues/${id}/verify`, { method: 'POST', body: JSON.stringify({ comment }) }
+    );
+  }
+
+  async deleteIssue(id: string) {
+    return this.request<{ success: boolean }>(`/issues/${id}`, { method: 'DELETE' });
+  }
+
+  // ── Notifications ───────────────────────────────────────────────────────────
+
+  async getNotifications() {
+    return this.request<{ success: boolean; data: { notifications: Notification[]; unreadCount: number } }>(
+      '/notifications'
+    );
+  }
+
+  async markNotificationRead(id: string) {
+    return this.request<{ success: boolean }>(`/notifications/${id}/read`, { method: 'PATCH' });
+  }
+
+  async markAllNotificationsRead() {
+    return this.request<{ success: boolean }>('/notifications/read-all', { method: 'PATCH' });
+  }
+
+  // ── Leaderboard ─────────────────────────────────────────────────────────────
+
+  async getLeaderboard(period: 'week' | 'month' | 'overall' = 'overall') {
+    return this.request<{ success: boolean; data: { users: User[]; period: string } }>(
+      `/leaderboard?period=${period}`
+    );
+  }
+
+  // ── Admin ───────────────────────────────────────────────────────────────────
+
+  async getAdminDashboard() {
+    return this.request<{ success: boolean; data: { stats: Record<string, number> } }>(
+      '/admin/dashboard'
+    );
+  }
+
+  async getAdminIssues(params: { page?: number; status?: string; category?: string } = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => v && query.set(k, String(v)));
+    return this.request<{ success: boolean; data: { issues: Issue[]; pagination: Pagination } }>(
+      `/admin/issues?${query}`
+    );
+  }
+
+  async getAdminUsers(params: { page?: number; role?: string; search?: string } = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => v && query.set(k, String(v)));
+    return this.request<{ success: boolean; data: { users: User[]; pagination: Pagination } }>(
+      `/admin/users?${query}`
+    );
+  }
+
+  async getAnalytics() {
+    return this.request<{ success: boolean; data: Record<string, unknown[]> }>('/admin/analytics');
+  }
+
+  // ── Health ──────────────────────────────────────────────────────────────────
   async healthCheck() {
-    return this.request<{
-      message: string;
-      status: string;
-    }>('/health');
+    return this.request<{ success: boolean; message: string }>('/health');
+  }
+
+  // ── Image URL helper ────────────────────────────────────────────────────────
+  /** Returns a usable src URL for an IssueImage regardless of storage backend */
+  getImageUrl(img: { url?: string; filename?: string; path?: string } | undefined): string {
+    if (!img) return '';
+    if (img.url) return img.url; // Cloudinary
+    if (img.filename) return `${this.baseURL}/issues/image/${img.filename}`; // legacy local
+    return '';
   }
 }
-
 
 export const apiService = new ApiService();
 export default apiService;

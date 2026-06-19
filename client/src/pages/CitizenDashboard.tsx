@@ -5,293 +5,200 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Navbar } from '@/components/Navbar';
 import { useAuth } from '@/contexts/AuthContext';
-import {
-  Plus,
-  MapPin,
-  Clock,
-  CheckCircle,
-  AlertTriangle,
-  TrendingUp,
-  Users,
-  Camera,
-  MessageSquare
-} from 'lucide-react';
-import axios from "axios";
 import apiService from '@/services/api';
+import type { Issue } from '@/types';
+import { STATUS_COLOR, STATUS_LABELS, CATEGORY_EMOJI, CATEGORY_LABELS } from '@/lib/issueHelpers';
+import {
+  Plus, MapPin, Clock, CheckCircle, AlertTriangle,
+  TrendingUp, Camera, ThumbsUp, Map, Award, Star,
+  Loader2, ChevronRight, RefreshCw
+} from 'lucide-react';
 
 const CitizenDashboard = () => {
   const { user } = useAuth();
+  const [myIssues, setMyIssues] = useState<Issue[]>([]);
+  const [recentIssues, setRecentIssues] = useState<Issue[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  
-  // Mock data - replace with actual API calls
-  const myIssues = [
-    {
-      id: '1',
-      title: 'Broken streetlight on Main Street',
-      type: 'streetlight',
-      status: 'in-progress',
-      date: '2024-01-15',
-      location: 'Main Street, Block A',
-      upvotes: 12,
-      comments: 3
-    },
-    {
-      id: '2',
-      title: 'Pothole near school entrance',
-      type: 'pothole',
-      status: 'resolved',
-      date: '2024-01-10',
-      location: 'School Road',
-      upvotes: 8,
-      comments: 5
-    }
-  ];
-  const [ApiData,setApiData] = useState({nearbyIssues:[],myIssues:[]});
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const Neardata = await apiService.getIssues();
-        const Mydata = await apiService.getMyIssues();
-        setApiData({nearbyIssues:Neardata.issues,myIssues:Mydata.issues});
-        // console.log(Mydata);
-      } catch (error) {
-        console.error(error);
-      }
-    }
-    fetchData();
-    
-  },[])
-// console.log(ApiData);
-
-  // const nearbyIssues = [
-  //   {
-  //     id: '3',
-  //     title: 'Garbage pile needs collection',
-  //     type: 'garbage',
-  //     status: 'pending',
-  //     date: '2024-01-18',
-  //     location: '0.2km away',
-  //     needsVerification: true
-  //   },
-  //   {
-  //     id: '4',
-  //     title: 'Water leak on Park Avenue',
-  //     type: 'water-leak',
-  //     status: 'acknowledged',
-  //     date: '2024-01-17',
-  //     location: '0.5km away',
-  //     needsVerification: false
-  //   }
-  // ];
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-warning/10 text-warning-foreground';
-      case 'acknowledged': return 'bg-info/10 text-info-foreground';
-      case 'in-progress': return 'bg-primary/10 text-primary-foreground';
-      case 'resolved': return 'bg-success/10 text-success-foreground';
-      default: return 'bg-muted text-muted-foreground';
-    }
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [mine, recent] = await Promise.all([
+        apiService.getMyIssues(),
+        apiService.getIssues({ limit: 6, sortBy: 'createdAt', order: 'desc' }),
+      ]);
+      setMyIssues(mine.data.issues);
+      setRecentIssues(recent.data.issues);
+    } catch { /* silent */ } finally { setLoading(false); }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'pending': return AlertTriangle;
-      case 'acknowledged': return Clock;
-      case 'in-progress': return Clock;
-      case 'resolved': return CheckCircle;
-      default: return Clock;
-    }
-  };
+  useEffect(() => { load(); }, []);
+
+  const resolved = myIssues.filter(i => ['completed', 'closed', 'resolved'].includes(i.status)).length;
+  const pending  = myIssues.filter(i => i.status === 'pending').length;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-muted/30">
       <Navbar />
-      
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-8 max-w-6xl">
+
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">
-              Welcome back, {user?.name}!
-            </h1>
-            <p className="text-muted-foreground">
-              Track your reports and help verify issues in your community
-            </p>
+            <h1 className="text-2xl font-bold">Welcome back, {user?.name?.split(' ')[0]}!</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">Track your reports and contribute to your community.</p>
           </div>
-          
-          <div className="flex flex-col sm:flex-row gap-3 mt-4 md:mt-0">
-            <Button asChild>
-              <Link to="/report-issue" className="flex items-center">
-                <Plus className="mr-2 h-4 w-4" />
-                Report Issue
-              </Link>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button size="sm" asChild>
+              <Link to="/report-issue"><Plus className="mr-1.5 h-4 w-4" /> Report Issue</Link>
             </Button>
           </div>
         </div>
 
-        {/* Stats Cards */}
+        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-2xl font-bold text-primary">{user?.civicScore || 150}</p>
-                  <p className="text-xs text-muted-foreground">Civic Score</p>
+          {[
+            { label: 'Civic Points',  value: user?.points ?? user?.civicScore ?? 0, icon: Award,       color: 'text-amber-500', bg: 'bg-amber-50' },
+            { label: 'My Reports',    value: myIssues.length,                        icon: Camera,      color: 'text-blue-500',  bg: 'bg-blue-50' },
+            { label: 'Resolved',      value: resolved,                               icon: CheckCircle, color: 'text-emerald-500', bg: 'bg-emerald-50' },
+            { label: 'Level',         value: user?.level ?? 'Bronze',               icon: Star,        color: 'text-purple-500', bg: 'bg-purple-50', isText: true },
+          ].map((s, i) => (
+            <Card key={i} className="border-0 shadow-sm">
+              <CardContent className="pt-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className={`text-2xl font-bold ${s.isText ? 'text-base mt-1' : ''}`}>{s.value}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+                  </div>
+                  <div className={`${s.bg} p-2.5 rounded-xl`}>
+                    <s.icon className={`h-5 w-5 ${s.color}`} />
+                  </div>
                 </div>
-                <TrendingUp className="h-4 w-4 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-2xl font-bold">{myIssues.length}</p>
-                  <p className="text-xs text-muted-foreground">My Reports</p>
-                </div>
-                <Camera className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-2xl font-bold">7</p>
-                  <p className="text-xs text-muted-foreground">Verified</p>
-                </div>
-                <CheckCircle className="h-4 w-4 text-success" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-2xl font-bold">15</p>
-                  <p className="text-xs text-muted-foreground">Rank</p>
-                </div>
-                <Users className="h-4 w-4 text-accent" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-8">
+        <div className="grid lg:grid-cols-2 gap-6">
           {/* My Issues */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Camera className="mr-2 h-5 w-5" />
-                My Issues
-              </CardTitle>
-              <CardDescription>
-                Issues you've reported to the community
-              </CardDescription>
+          <Card className="shadow-sm border-0">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Camera className="h-4 w-4" /> My Reports
+                </CardTitle>
+                <Badge variant="secondary">{myIssues.length}</Badge>
+              </div>
+              <CardDescription className="text-xs">Issues you've reported to the community</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {ApiData.myIssues.map((issue) => {
-                const StatusIcon = getStatusIcon(issue.status);
-                return (
-                  <div key={issue._id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <Link
-                          to={`/issue/${issue._id}`}
-                          className="font-medium text-foreground hover:text-primary transition-colors"
-                        >
-                          {issue.title}
-                        </Link>
-                        <p className="text-sm text-muted-foreground flex items-center mt-1">
-                          <MapPin className="mr-1 h-3 w-3" />
-                          {issue.location.address}
-                        </p>
+            <CardContent>
+              {loading ? (
+                <div className="flex items-center justify-center h-32">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : myIssues.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  <Camera className="h-10 w-10 mx-auto mb-3 opacity-20" />
+                  <p className="text-sm">No reports yet.</p>
+                  <Button variant="outline" size="sm" className="mt-3" asChild>
+                    <Link to="/report-issue">Report your first issue</Link>
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {myIssues.slice(0, 5).map(issue => (
+                    <Link key={issue._id} to={`/issue/${issue._id}`}>
+                      <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/60 transition-colors group">
+                        <span className="text-lg mt-0.5">{CATEGORY_EMOJI[issue.category] || '📋'}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium group-hover:text-primary transition-colors truncate">{issue.title}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge className={`text-[10px] px-1.5 py-0 border ${STATUS_COLOR[issue.status] || 'bg-muted'}`}>
+                              {STATUS_LABELS[issue.status] || issue.status}
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                              <ThumbsUp className="h-2.5 w-2.5" /> {issue.upvotes?.length ?? 0}
+                            </span>
+                            {issue.location.address && (
+                              <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 truncate">
+                                <MapPin className="h-2.5 w-2.5 shrink-0" />
+                                <span className="truncate">{issue.location.address.split(',')[0]}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5" />
                       </div>
-                      <Badge className={getStatusColor(issue.status)}>
-                        <StatusIcon className="mr-1 h-3 w-3" />
-                        {issue.status}
-                      </Badge>
-                    </div>
-                    
-                    <div className="flex items-center justify-between text-sm text-muted-foreground">
-                      <span>{issue.date}</span>
-                      <div className="flex items-center space-x-3">
-                        <span className="flex items-center">
-                          <TrendingUp className="mr-1 h-3 w-3" />
-                          {issue.upvotes}
-                        </span>
-                        <span className="flex items-center">
-                          <MessageSquare className="mr-1 h-3 w-3" />
-                          {issue.comments}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              <Button variant="outline" className="w-full" asChild>
-                <Link to="/report-issue">Report New Issue</Link>
-              </Button>
+                    </Link>
+                  ))}
+                  {myIssues.length > 5 && (
+                    <p className="text-xs text-center text-muted-foreground pt-1">
+                      +{myIssues.length - 5} more issues
+                    </p>
+                  )}
+                </div>
+              )}
+              <div className="pt-3 border-t mt-3">
+                <Button variant="outline" size="sm" className="w-full" asChild>
+                  <Link to="/report-issue"><Plus className="h-4 w-4 mr-1.5" /> Report New Issue</Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
-          {/* Nearby Issues */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <MapPin className="mr-2 h-5 w-5" />
-                Nearby Issues
-              </CardTitle>
-              <CardDescription>
-                Help verify issues in your area to earn civic points
-              </CardDescription>
+          {/* Recent Community Issues */}
+          <Card className="shadow-sm border-0">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" /> Community Issues
+                </CardTitle>
+                <Badge variant="secondary">{recentIssues.length}</Badge>
+              </div>
+              <CardDescription className="text-xs">Recent issues near you — help verify them to earn points</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {ApiData.nearbyIssues.map((issue,index) => {
-                const StatusIcon = getStatusIcon(issue.status);
-                
-                return (
-                  
-                  <div key={issue._id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <Link
-                          to={`/issue/${issue._id}`}
-                          className="font-medium text-foreground hover:text-primary transition-colors"
-                        >
-                          {issue.title}
-                        </Link>
-                        <p className="text-sm text-muted-foreground flex items-center mt-1">
-                          <MapPin className="mr-1 h-3 w-3" />
-                          {issue.location.address}
-                        </p>
+            <CardContent>
+              {loading ? (
+                <div className="flex items-center justify-center h-32">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : recentIssues.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  <MapPin className="h-10 w-10 mx-auto mb-3 opacity-20" />
+                  <p className="text-sm">No community issues found.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentIssues.map(issue => (
+                    <Link key={issue._id} to={`/issue/${issue._id}`}>
+                      <div className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/60 transition-colors group">
+                        <span className="text-lg mt-0.5">{CATEGORY_EMOJI[issue.category] || '📋'}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium group-hover:text-primary transition-colors truncate">{issue.title}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge className={`text-[10px] px-1.5 py-0 border ${STATUS_COLOR[issue.status] || 'bg-muted'}`}>
+                              {STATUS_LABELS[issue.status] || issue.status}
+                            </Badge>
+                            {issue.status === 'pending' && (
+                              <span className="text-[10px] text-amber-600 font-medium">Needs verification</span>
+                            )}
+                          </div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5" />
                       </div>
-                      <Badge className={getStatusColor(issue.status)}>
-                        <StatusIcon className="mr-1 h-3 w-3" />
-                        {issue.status}
-                      </Badge>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">{issue.date}</span>
-                      {issue.needsVerification && (
-                        <Button size="sm" variant="outline">
-                          Verify
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              <Button variant="outline" className="w-full" asChild>
-                <Link to="/map">View Map</Link>
-              </Button>
+                    </Link>
+                  ))}
+                </div>
+              )}
+              <div className="pt-3 border-t mt-3">
+                <Button variant="outline" size="sm" className="w-full" asChild>
+                  <Link to="/map"><Map className="h-4 w-4 mr-1.5" /> View on Map</Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

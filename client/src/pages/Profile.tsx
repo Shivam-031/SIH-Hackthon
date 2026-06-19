@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -10,417 +10,249 @@ import { Separator } from '@/components/ui/separator';
 import { Navbar } from '@/components/Navbar';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import apiService from '@/services/api';
 import {
-  User,
-  Mail,
-  Phone,
-  MapPin,
-  Award,
-  TrendingUp,
-  Calendar,
-  Edit2,
-  Save,
-  X,
-  Star,
-  CheckCircle,
-  Clock,
-  Camera
+  User, Mail, Phone, Award, Edit2, Save, X,
+  Star, CheckCircle, Clock, Camera, Loader2, Upload
 } from 'lucide-react';
 
+const LEVEL_PROGRESS: Record<string, { next: string; threshold: number; color: string }> = {
+  Bronze:        { next: 'Silver',      threshold: 200,  color: 'from-amber-600 to-amber-400' },
+  Silver:        { next: 'Gold',        threshold: 500,  color: 'from-slate-400 to-slate-300' },
+  Gold:          { next: 'Citizen Hero',threshold: 1000, color: 'from-yellow-500 to-yellow-300' },
+  'Citizen Hero':{ next: '—',           threshold: 9999, color: 'from-purple-600 to-purple-400' },
+};
+
 const Profile = () => {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    phone: user?.phone || '',
-  });
+  const [saving, setSaving] = useState(false);
+  const [editData, setEditData] = useState({ name: user?.name || '', phone: user?.phone || '' });
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  // Mock data - replace with actual API calls
-  const stats = {
-    issuesReported: 12,
-    issuesVerified: 28,
-    issuesResolved: 8,
-    civicScore: user?.civicScore || 150,
-    rank: 15,
-    joinDate: '2023-08-15'
+  const points = user?.points ?? user?.civicScore ?? 0;
+  const level  = user?.level ?? 'Bronze';
+  const levelInfo = LEVEL_PROGRESS[level] ?? LEVEL_PROGRESS['Bronze'];
+  const progressPct = Math.min(100, Math.round((points / levelInfo.threshold) * 100));
+
+  const handleAvatarPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
   };
 
-  const badges = [
-    { name: 'Verified Reporter', description: 'Reported 10+ verified issues', earned: true, icon: CheckCircle },
-    { name: 'Community Helper', description: 'Verified 25+ issues', earned: true, icon: Award },
-    { name: 'Top Contributor', description: 'Top 20 civic score in your area', earned: true, icon: Star },
-    { name: 'Quick Responder', description: 'Verify issues within 1 hour', earned: false, icon: Clock }
-  ];
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('name', editData.name);
+      if (editData.phone) fd.append('phone', editData.phone);
+      if (avatarFile) fd.append('profileImage', avatarFile);
+      await apiService.updateProfile(fd);
+      await refreshUser();
+      toast({ title: '✅ Profile updated' });
+      setIsEditing(false);
+      setAvatarFile(null);
+      if (avatarPreview) { URL.revokeObjectURL(avatarPreview); setAvatarPreview(null); }
+    } catch (err) {
+      toast({ title: 'Update failed', description: err instanceof Error ? err.message : undefined, variant: 'destructive' });
+    } finally { setSaving(false); }
+  };
 
-  const recentActivity = [
-    {
-      id: '1',
-      type: 'reported',
-      title: 'Broken streetlight on Oak Avenue',
-      date: '2024-01-18',
-      status: 'in-progress',
-      points: 10
-    },
-    {
-      id: '2',
-      type: 'verified',
-      title: 'Pothole on Main Street',
-      date: '2024-01-17',
-      status: 'confirmed',
-      points: 5
-    },
-    {
-      id: '3',
-      type: 'resolved',
-      title: 'Garbage collection needed',
-      date: '2024-01-15',
-      status: 'resolved',
-      points: 15
-    }
-  ];
-
-  const handleSave = () => {
-    // Mock save operation
-    toast({
-      title: "Profile updated",
-      description: "Your profile information has been saved.",
-    });
+  const cancelEdit = () => {
     setIsEditing(false);
+    setEditData({ name: user?.name || '', phone: user?.phone || '' });
+    if (avatarPreview) { URL.revokeObjectURL(avatarPreview); setAvatarPreview(null); }
+    setAvatarFile(null);
   };
 
-  const handleCancel = () => {
-    setEditData({
-      name: user?.name || '',
-      email: user?.email || '',
-      phone: user?.phone || '',
-    });
-    setIsEditing(false);
-  };
-
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case 'reported': return Camera;
-      case 'verified': return CheckCircle;
-      case 'resolved': return Award;
-      default: return Clock;
-    }
-  };
-
-  const getActivityColor = (type: string) => {
-    switch (type) {
-      case 'reported': return 'text-primary';
-      case 'verified': return 'text-info';
-      case 'resolved': return 'text-success';
-      default: return 'text-muted-foreground';
-    }
-  };
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Navbar />
-        <div className="container mx-auto px-4 py-8 text-center">
-          <h1 className="text-2xl font-bold mb-4">Profile Not Found</h1>
-          <p className="text-muted-foreground">Please log in to view your profile.</p>
-        </div>
-      </div>
-    );
-  }
+  const BADGES = [
+    { name: 'First Report',       desc: 'Reported your first issue',      earned: (user?.badges ?? []).includes('first_report') || points > 0,     icon: Camera },
+    { name: 'Verified Reporter',  desc: '10+ verified issues reported',   earned: (user?.badges ?? []).includes('verified_reporter'),               icon: CheckCircle },
+    { name: 'Community Helper',   desc: 'Verified 25+ community issues',  earned: (user?.badges ?? []).includes('community_helper'),               icon: Award },
+    { name: 'Top Contributor',    desc: 'Top 20 civic score in your area',earned: (user?.badges ?? []).includes('top_contributor'),                 icon: Star },
+    { name: 'Quick Responder',    desc: 'Verified issues within 1 hour',  earned: (user?.badges ?? []).includes('quick_responder'),                 icon: Clock },
+  ];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-muted/30">
       <Navbar />
-      
       <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* Profile Card */}
-          <div className="lg:col-span-1">
-            <Card>
-              <CardHeader className="text-center">
-                <Avatar className="h-20 w-20 mx-auto mb-4">
-                  <AvatarImage src={user.avatar} />
-                  <AvatarFallback className="text-lg">{user.name.charAt(0).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                
-                <div className="space-y-2">
-                  <CardTitle className="text-xl">{user.name}</CardTitle>
-                  <Badge variant={user.role === 'official' ? 'default' : 'secondary'}>
-                    {user.role === 'official' ? 'Government Official' : 'Citizen'}
-                  </Badge>
-                  {user.verified && (
-                    <Badge variant="outline" className="text-success border-success">
-                      <CheckCircle className="mr-1 h-3 w-3" />
-                      Verified
-                    </Badge>
+        <h1 className="text-2xl font-bold mb-6">My Profile</h1>
+
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* Left column — avatar + points */}
+          <div className="space-y-5">
+            {/* Avatar card */}
+            <Card className="shadow-sm border-0">
+              <CardContent className="pt-6 flex flex-col items-center gap-4">
+                <div className="relative">
+                  <Avatar className="h-24 w-24">
+                    <AvatarImage src={avatarPreview || user?.profileImage?.url || user?.avatar} />
+                    <AvatarFallback className="text-2xl font-bold bg-primary/10 text-primary">
+                      {user?.name?.charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  {isEditing && (
+                    <button
+                      className="absolute bottom-0 right-0 bg-primary text-primary-foreground rounded-full p-1.5 shadow-lg"
+                      onClick={() => fileRef.current?.click()}
+                    >
+                      <Camera className="h-3.5 w-3.5" />
+                    </button>
                   )}
+                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarPick} />
                 </div>
-              </CardHeader>
-              
-              <CardContent className="space-y-4">
-                {user.role === 'citizen' && (
-                  <div className="text-center">
-                    <p className="text-3xl font-bold text-primary">{stats.civicScore}</p>
-                    <p className="text-sm text-muted-foreground">Civic Score</p>
-                    <div className="flex items-center justify-center mt-2 text-sm text-muted-foreground">
-                      <TrendingUp className="mr-1 h-4 w-4" />
-                      Rank #{stats.rank} in your area
-                    </div>
+
+                <div className="text-center">
+                  <p className="font-bold text-lg">{user?.name}</p>
+                  <p className="text-sm text-muted-foreground">{user?.email}</p>
+                  <Badge variant="outline" className="mt-1 capitalize">{user?.role}</Badge>
+                </div>
+
+                {/* Level + progress */}
+                <div className="w-full">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm font-semibold">{level}</span>
+                    <span className="text-xs text-muted-foreground">{points} pts</span>
                   </div>
-                )}
-                
-                <Separator />
-                
-                <div className="space-y-3 text-sm">
-                  <div className="flex items-center">
-                    <Mail className="mr-2 h-4 w-4 text-muted-foreground" />
-                    <span>{user.email}</span>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full bg-gradient-to-r ${levelInfo.color} transition-all duration-500`}
+                      style={{ width: `${progressPct}%` }}
+                    />
                   </div>
-                  {user.phone && (
-                    <div className="flex items-center">
-                      <Phone className="mr-2 h-4 w-4 text-muted-foreground" />
-                      <span>{user.phone}</span>
-                    </div>
+                  {levelInfo.next !== '—' && (
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {levelInfo.threshold - points} pts to {levelInfo.next}
+                    </p>
                   )}
-                  <div className="flex items-center">
-                    <Calendar className="mr-2 h-4 w-4 text-muted-foreground" />
-                    <span>Joined {new Date(stats.joinDate).toLocaleDateString()}</span>
-                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Stats Card for Citizens */}
-            {user.role === 'citizen' && (
-              <Card className="mt-6">
-                <CardHeader>
-                  <CardTitle className="text-lg">Statistics</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4 text-center">
-                    <div>
-                      <p className="text-2xl font-bold text-primary">{stats.issuesReported}</p>
-                      <p className="text-xs text-muted-foreground">Issues Reported</p>
+            {/* Badges */}
+            <Card className="shadow-sm border-0">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2"><Award className="h-4 w-4" /> Badges</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2.5">
+                {BADGES.map(b => (
+                  <div key={b.name} className={`flex items-start gap-2.5 p-2.5 rounded-lg transition-colors ${b.earned ? 'bg-primary/5' : 'opacity-40'}`}>
+                    <div className={`p-1.5 rounded-lg ${b.earned ? 'bg-primary/10' : 'bg-muted'}`}>
+                      <b.icon className={`h-3.5 w-3.5 ${b.earned ? 'text-primary' : 'text-muted-foreground'}`} />
                     </div>
                     <div>
-                      <p className="text-2xl font-bold text-success">{stats.issuesResolved}</p>
-                      <p className="text-xs text-muted-foreground">Issues Resolved</p>
+                      <p className="text-xs font-semibold">{b.name}</p>
+                      <p className="text-[10px] text-muted-foreground">{b.desc}</p>
                     </div>
+                    {b.earned && <CheckCircle className="h-3.5 w-3.5 text-emerald-500 ml-auto shrink-0 mt-0.5" />}
                   </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-info">{stats.issuesVerified}</p>
-                    <p className="text-xs text-muted-foreground">Issues Verified</p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                ))}
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Main Content */}
-          <div className="lg:col-span-2">
-            <Tabs defaultValue="overview" className="space-y-6">
-              <TabsList className="w-full">
-                <TabsTrigger value="overview" className="flex-1">Overview</TabsTrigger>
-                <TabsTrigger value="activity" className="flex-1">Activity</TabsTrigger>
-                <TabsTrigger value="badges" className="flex-1">Badges</TabsTrigger>
-                <TabsTrigger value="settings" className="flex-1">Settings</TabsTrigger>
+          {/* Right column */}
+          <div className="lg:col-span-2 space-y-5">
+            <Tabs defaultValue="info">
+              <TabsList className="bg-background border w-full">
+                <TabsTrigger value="info" className="flex-1">Personal Info</TabsTrigger>
+                <TabsTrigger value="security" className="flex-1">Security</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="overview" className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Profile Overview</CardTitle>
-                    <CardDescription>
-                      Your civic engagement summary and recent contributions
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {user.role === 'citizen' ? (
-                      <div className="space-y-4">
-                        <p className="text-muted-foreground">
-                          You've been an active contributor to your community with {stats.issuesReported} reported issues 
-                          and {stats.issuesVerified} verifications. Keep up the great work!
-                        </p>
-                        
-                        <div className="grid grid-cols-3 gap-4 text-center">
-                          <div className="p-4 border rounded-lg">
-                            <Camera className="h-6 w-6 text-primary mx-auto mb-2" />
-                            <p className="font-medium">Reporter</p>
-                            <p className="text-xs text-muted-foreground">Help identify issues</p>
-                          </div>
-                          <div className="p-4 border rounded-lg">
-                            <CheckCircle className="h-6 w-6 text-success mx-auto mb-2" />
-                            <p className="font-medium">Verifier</p>
-                            <p className="text-xs text-muted-foreground">Confirm issue validity</p>
-                          </div>
-                          <div className="p-4 border rounded-lg">
-                            <Award className="h-6 w-6 text-accent mx-auto mb-2" />
-                            <p className="font-medium">Contributor</p>
-                            <p className="text-xs text-muted-foreground">Build civic score</p>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <User className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                        <h3 className="text-lg font-medium mb-2">Government Official</h3>
-                        <p className="text-muted-foreground">
-                          Manage and resolve civic issues in your jurisdiction through the official dashboard.
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="activity" className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Recent Activity</CardTitle>
-                    <CardDescription>
-                      Your latest contributions to the community
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {recentActivity.map((activity) => {
-                        const ActivityIcon = getActivityIcon(activity.type);
-                        return (
-                          <div key={activity.id} className="flex items-start gap-4 p-4 border rounded-lg">
-                            <div className={`p-2 rounded-full bg-muted ${getActivityColor(activity.type)}`}>
-                              <ActivityIcon className="h-4 w-4" />
-                            </div>
-                            
-                            <div className="flex-1">
-                              <p className="font-medium text-foreground">{activity.title}</p>
-                              <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                                <span className="capitalize">{activity.type}</span>
-                                <span>{activity.date}</span>
-                                <Badge variant="outline" className="text-xs">
-                                  +{activity.points} points
-                                </Badge>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="badges" className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Achievement Badges</CardTitle>
-                    <CardDescription>
-                      Recognition for your civic contributions
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {badges.map((badge, index) => (
-                        <div
-                          key={index}
-                          className={`p-4 border rounded-lg ${
-                            badge.earned ? 'border-primary/20 bg-primary/5' : 'border-muted bg-muted/20 opacity-60'
-                          }`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className={`p-2 rounded-full ${badge.earned ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
-                              <badge.icon className="h-4 w-4" />
-                            </div>
-                            
-                            <div>
-                              <p className="font-medium text-foreground">{badge.name}</p>
-                              <p className="text-sm text-muted-foreground">{badge.description}</p>
-                              {badge.earned && (
-                                <Badge className="mt-2 text-xs">Earned</Badge>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="settings" className="space-y-6">
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between">
-                    <div>
-                      <CardTitle>Profile Settings</CardTitle>
-                      <CardDescription>
-                        Update your personal information
-                      </CardDescription>
-                    </div>
-                    
-                    <Button
-                      variant={isEditing ? "ghost" : "outline"}
-                      size="sm"
-                      onClick={() => setIsEditing(!isEditing)}
-                    >
-                      {isEditing ? (
-                        <>
-                          <X className="mr-2 h-4 w-4" />
-                          Cancel
-                        </>
+              <TabsContent value="info" className="mt-4">
+                <Card className="shadow-sm border-0">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base">Personal Information</CardTitle>
+                      {!isEditing ? (
+                        <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+                          <Edit2 className="h-3.5 w-3.5 mr-1.5" /> Edit
+                        </Button>
                       ) : (
-                        <>
-                          <Edit2 className="mr-2 h-4 w-4" />
-                          Edit
-                        </>
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="sm" onClick={cancelEdit}>
+                            <X className="h-3.5 w-3.5 mr-1" /> Cancel
+                          </Button>
+                          <Button size="sm" onClick={handleSave} disabled={saving}>
+                            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                            Save
+                          </Button>
+                        </div>
                       )}
-                    </Button>
+                    </div>
                   </CardHeader>
-                  
                   <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Full Name</Label>
-                      <Input
-                        id="name"
-                        value={editData.name}
-                        onChange={(e) => setEditData(prev => ({ ...prev, name: e.target.value }))}
-                        disabled={!isEditing}
-                      />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="name" className="text-xs text-muted-foreground">Full Name</Label>
+                      {isEditing ? (
+                        <Input
+                          id="name" value={editData.name}
+                          onChange={e => setEditData(p => ({ ...p, name: e.target.value }))}
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2 py-2">
+                          <User className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">{user?.name}</span>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={editData.email}
-                        onChange={(e) => setEditData(prev => ({ ...prev, email: e.target.value }))}
-                        disabled={!isEditing}
-                      />
-                    </div>
+                    <Separator />
 
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">Phone Number</Label>
-                      <Input
-                        id="phone"
-                        type="tel"
-                        value={editData.phone}
-                        onChange={(e) => setEditData(prev => ({ ...prev, phone: e.target.value }))}
-                        disabled={!isEditing}
-                        placeholder="Enter phone number"
-                      />
-                    </div>
-
-                    {isEditing && (
-                      <div className="flex gap-2 pt-4">
-                        <Button onClick={handleSave} className="flex items-center">
-                          <Save className="mr-2 h-4 w-4" />
-                          Save Changes
-                        </Button>
-                        <Button variant="outline" onClick={handleCancel}>
-                          Cancel
-                        </Button>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">Email</Label>
+                      <div className="flex items-center gap-2 py-2">
+                        <Mail className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">{user?.email}</span>
+                        <Badge variant="outline" className="text-[10px] ml-auto">Cannot change</Badge>
                       </div>
-                    )}
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="phone" className="text-xs text-muted-foreground">Phone</Label>
+                      {isEditing ? (
+                        <Input
+                          id="phone" value={editData.phone}
+                          placeholder="+91 98765 43210"
+                          onChange={e => setEditData(p => ({ ...p, phone: e.target.value }))}
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2 py-2">
+                          <Phone className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm">{user?.phone || <span className="text-muted-foreground italic">Not set</span>}</span>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="security" className="mt-4">
+                <Card className="shadow-sm border-0">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-base">Security</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="p-4 bg-muted/50 rounded-lg">
+                      <p className="text-sm font-medium mb-1">Password</p>
+                      <p className="text-xs text-muted-foreground mb-3">Change your account password.</p>
+                      <Button variant="outline" size="sm" disabled>Change Password (coming soon)</Button>
+                    </div>
+                    <div className="p-4 bg-muted/50 rounded-lg">
+                      <p className="text-sm font-medium mb-1">Account Status</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                        <span className="text-sm text-emerald-700">Active</span>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>

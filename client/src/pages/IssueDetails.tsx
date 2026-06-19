@@ -1,446 +1,477 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Navbar } from '@/components/Navbar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import {
-  MapPin,
-  Calendar,
-  User,
-  ThumbsUp,
-  MessageSquare,
-  Camera,
-  CheckCircle,
-  X,
-  Clock,
-  AlertTriangle,
-  ArrowLeft,
-  Share,
-  Flag
-} from 'lucide-react';
 import apiService from '@/services/api';
-import { title } from 'process';
-import axios from 'axios';
+import type { Issue } from '@/types';
+import { STATUS_LABELS, STATUS_COLOR, SEVERITY_COLOR, CATEGORY_LABELS, CATEGORY_EMOJI } from '@/lib/issueHelpers';
+import {
+  ArrowLeft, MapPin, ThumbsUp, CheckCircle, X,
+  Clock, AlertTriangle, ChevronLeft, ChevronRight,
+  ZoomIn, Share2, CalendarDays, Shield, TrendingUp, Loader2
+} from 'lucide-react';
 
 const IssueDetails = () => {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const { toast } = useToast();
-  const [comment, setComment] = useState('');
+  const navigate = useNavigate();
+
+  const [issue, setIssue] = useState<Issue | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [upvoteLoading, setUpvoteLoading] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [verifyComment, setVerifyComment] = useState('');
+  const [showVerifyForm, setShowVerifyForm] = useState(false);
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   const [hasUpvoted, setHasUpvoted] = useState(false);
-  const [userInfo, setUser] = useState({ id: "", title: "", description: "", reportedBy: { name: "" }, location: { address: "", latitude: "", longitude: "" }, images: [{ filename: "" }, { filename: "" }] });
-  useEffect(() => {
-    const LoadIssue = async () => {
-      const res = await apiService.getIssue(id)
-      setUser(res.issue);
-    }
-    LoadIssue();
-  }, [id]);
+  const [hasVerified, setHasVerified] = useState(false);
 
-  const issue = {
-    id: id || '1',
-    title: userInfo.title || 'Broken streetlight on Main Street',
-    description: userInfo.description || 'The streetlight at the corner of Main Street and Oak Avenue has been non-functional for over a week. This creates a safety hazard for pedestrians and drivers, especially during evening hours. The light appears to be completely out and may need electrical repair or bulb replacement.',
-    category: 'streetlight',
-    status: 'in-progress',
-    priority: 'high',
-    reporter: {
-      name: userInfo.reportedBy.name || 'Sarah Johnson',
-      avatar: '',
-      civicScore: 245
-    },
-    location: {
-      address: userInfo.location.address || 'Main Street & Oak Avenue, Downtown',
-      coordinates: userInfo.location.latitude ? `${userInfo.location.latitude},${userInfo.location.longitude}` : '40.7128, -74.0060'
-    },
-    createdAt: '2024-01-15T10:30:00Z',
-    updatedAt: '2024-01-18T14:20:00Z',
-    upvotes: 24,
-    comments: 6,
-    images: [
-      userInfo.images[0] != undefined? `https://sih-hackthon-g8l7.onrender.com/api/issues/image/${userInfo.images[0].filename}`:'#'
-      ,userInfo.images[1] != undefined?`https://sih-hackthon-g8l7.onrender.com/api/issues/image/${userInfo.images[1].filename} `:"#"
-    ],
-    verifications: [
-      {
-        id: '1',
-        user: 'Mike Wilson',
-        type: 'confirm',
-        comment: 'Can confirm, light has been out for several days',
-        timestamp: '2024-01-16T09:15:00Z'
-      },
-      {
-        id: '2',
-        user: 'Lisa Chen',
-        type: 'confirm',
-        comment: 'Very dangerous at night, needs immediate attention',
-        timestamp: '2024-01-16T18:45:00Z'
+  const loadIssue = async () => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      const res = await apiService.getIssue(id);
+      setIssue(res.data.issue);
+      if (user) {
+        setHasUpvoted(res.data.issue.upvotes?.includes(user._id || user.id));
+        setHasVerified((res.data.issue.verifiedBy ?? []).includes(user._id || user.id));
       }
-    ],
-    assignedTo: 'Public Works Department',
-    estimatedResolution: '2024-01-22'
+    } catch {
+      toast({ title: 'Failed to load issue', variant: 'destructive' });
+    } finally { setLoading(false); }
   };
 
-  const comments = [
-    {
-      id: '1',
-      user: 'John Doe',
-      avatar: '',
-      comment: 'I noticed this too. It\'s been dark for about a week now.',
-      timestamp: '2024-01-16T12:30:00Z',
-      civicScore: 180
-    },
-    {
-      id: '2',
-      user: 'Emily Parker',
-      avatar: '',
-      comment: 'Thanks for reporting this! I walk this route every evening.',
-      timestamp: '2024-01-17T19:15:00Z',
-      civicScore: 95
-    }
-  ];
-  // console.log(userInfo)
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-warning/10 text-warning-foreground';
-      case 'acknowledged': return 'bg-info/10 text-info-foreground';
-      case 'in-progress': return 'bg-primary/10 text-primary-foreground';
-      case 'resolved': return 'bg-success/10 text-success-foreground';
-      default: return 'bg-muted text-muted-foreground';
-    }
+  useEffect(() => { loadIssue(); }, [id]);
+
+  const handleUpvote = async () => {
+    if (!user || !issue) return;
+    setUpvoteLoading(true);
+    try {
+      const res = await apiService.upvoteIssue(issue._id);
+      setHasUpvoted(!hasUpvoted);
+      setIssue(prev => prev ? { ...prev, upvotes: Array(res.data.upvotes).fill('') } : prev);
+      toast({ title: hasUpvoted ? 'Upvote removed' : '👍 Upvoted!' });
+    } catch (err) {
+      toast({ title: 'Failed to upvote', variant: 'destructive' });
+    } finally { setUpvoteLoading(false); }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'pending': return AlertTriangle;
-      case 'acknowledged': return Clock;
-      case 'in-progress': return Clock;
-      case 'resolved': return CheckCircle;
-      default: return Clock;
-    }
+  const handleVerify = async () => {
+    if (!user || !issue) return;
+    setVerifyLoading(true);
+    try {
+      await apiService.verifyIssue(issue._id, verifyComment);
+      setHasVerified(true);
+      setShowVerifyForm(false);
+      toast({ title: '✅ Verified!', description: 'Thanks for confirming this issue.' });
+      loadIssue();
+    } catch (err) {
+      toast({ title: err instanceof Error ? err.message : 'Verification failed', variant: 'destructive' });
+    } finally { setVerifyLoading(false); }
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'bg-destructive/10 text-destructive-foreground';
-      case 'medium': return 'bg-warning/10 text-warning-foreground';
-      case 'low': return 'bg-success/10 text-success-foreground';
-      default: return 'bg-muted text-muted-foreground';
-    }
+  const handleShare = () => {
+    navigator.clipboard.writeText(window.location.href).catch(() => {});
+    toast({ title: 'Link copied to clipboard' });
   };
 
-  const handleUpvote = () => {
-    setHasUpvoted(!hasUpvoted);
-    toast({
-      title: hasUpvoted ? "Upvote removed" : "Issue upvoted",
-      description: hasUpvoted ? "Your support has been removed" : "Thanks for supporting this issue!",
-    });
-  };
+  // Lightbox navigation
+  const prevImage = () => setLightboxIdx(i => (i !== null && issue ? (i - 1 + issue.images.length) % issue.images.length : null));
+  const nextImage = () => setLightboxIdx(i => (i !== null && issue ? (i + 1) % issue.images.length : null));
 
-  const handleComment = () => {
-    if (!comment.trim()) return;
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (lightboxIdx === null) return;
+      if (e.key === 'Escape') setLightboxIdx(null);
+      if (e.key === 'ArrowLeft') prevImage();
+      if (e.key === 'ArrowRight') nextImage();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [lightboxIdx, issue]);
 
-    // Mock comment submission
-    toast({
-      title: "Comment added",
-      description: "Your comment has been posted.",
-    });
-    setComment('');
-  };
+  if (loading) return (
+    <div className="min-h-screen bg-background">
+      <Navbar />
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    </div>
+  );
 
-  const handleVerification = (type: 'confirm' | 'deny') => {
-    toast({
-      title: `Issue ${type}ed`,
-      description: `You have ${type}ed this issue. Thank you for your contribution!`,
-    });
-  };
+  if (!issue) return (
+    <div className="min-h-screen bg-background">
+      <Navbar />
+      <div className="container mx-auto px-4 py-20 text-center">
+        <AlertTriangle className="h-12 w-12 text-destructive mx-auto mb-4" />
+        <h1 className="text-2xl font-bold">Issue not found</h1>
+        <Button className="mt-4" onClick={() => navigate(-1)}>Go back</Button>
+      </div>
+    </div>
+  );
 
-  const StatusIcon = getStatusIcon(issue.status);
+  const images = issue.images?.filter(img => apiService.getImageUrl(img)) || [];
+  const reporter = typeof issue.reportedBy === 'object' ? issue.reportedBy : null;
+  const statusLabel = STATUS_LABELS[issue.status] || issue.status;
 
   return (
-    <>
-      <div className="min-h-screen bg-background">
-        <Navbar />
+    <div className="min-h-screen bg-muted/30">
+      <Navbar />
 
-        <div className="container mx-auto px-4 py-8 max-w-4xl">
-          {/* Header */}
-          <div className="flex items-center gap-4 mb-6">
-            <Button variant="ghost" size="sm" asChild>
-              <Link to={user?.role === 'official' ? '/official-dashboard' : '/citizen-dashboard'}>
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Dashboard
-              </Link>
-            </Button>
+      {/* Lightbox */}
+      {lightboxIdx !== null && images.length > 0 && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center"
+          onClick={() => setLightboxIdx(null)}
+        >
+          <button className="absolute top-4 right-4 text-white/80 hover:text-white">
+            <X className="h-8 w-8" />
+          </button>
+          <button
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-2"
+            onClick={e => { e.stopPropagation(); prevImage(); }}
+          >
+            <ChevronLeft className="h-8 w-8" />
+          </button>
+          <img
+            src={apiService.getImageUrl(images[lightboxIdx])}
+            alt={`Issue photo ${lightboxIdx + 1}`}
+            className="max-h-[90vh] max-w-[90vw] object-contain rounded"
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-2"
+            onClick={e => { e.stopPropagation(); nextImage(); }}
+          >
+            <ChevronRight className="h-8 w-8" />
+          </button>
+          <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/60 text-sm">
+            {lightboxIdx + 1} / {images.length}
+          </p>
+        </div>
+      )}
 
-            <div className="flex gap-2 ml-auto">
-              <Button variant="outline" size="sm">
-                <Share className="mr-2 h-4 w-4" />
-                Share
-              </Button>
-              <Button variant="outline" size="sm">
-                <Flag className="mr-2 h-4 w-4" />
-                Report
-              </Button>
-            </div>
-          </div>
+      <div className="container mx-auto px-4 py-6 max-w-5xl">
+        {/* Top nav */}
+        <div className="flex items-center justify-between mb-6">
+          <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+            <ArrowLeft className="mr-1.5 h-4 w-4" /> Back
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleShare}>
+            <Share2 className="mr-1.5 h-4 w-4" /> Share
+          </Button>
+        </div>
 
-          <div className="grid lg:grid-cols-3 gap-8">
-            {/* Main Content */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Issue Header */}
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* Main */}
+          <div className="lg:col-span-2 space-y-5">
+            {/* Title card */}
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <Badge className={`text-xs border ${STATUS_COLOR[issue.status] || ''}`}>
+                    {statusLabel}
+                  </Badge>
+                  {issue.severity && (
+                    <Badge className={`text-xs ${SEVERITY_COLOR[issue.severity] || ''}`}>
+                      {issue.severity} severity
+                    </Badge>
+                  )}
+                  <Badge variant="outline" className="text-xs">
+                    {CATEGORY_EMOJI[issue.category]} {CATEGORY_LABELS[issue.category] || issue.category}
+                  </Badge>
+                </div>
+
+                <h1 className="text-xl font-bold text-foreground mb-3">{issue.title}</h1>
+
+                {issue.description && (
+                  <p className="text-muted-foreground leading-relaxed text-sm">{issue.description}</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Photos */}
+            {images.length > 0 && (
               <Card>
-                <CardHeader>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    <Badge className={getStatusColor(issue.status)}>
-                      <StatusIcon className="mr-1 h-3 w-3" />
-                      {issue.status}
-                    </Badge>
-                    <Badge className={getPriorityColor(issue.priority)}>
-                      {issue.priority} priority
-                    </Badge>
-                    <Badge variant="outline">
-                      {issue.category}
-                    </Badge>
-                  </div>
-
-                  <CardTitle className="text-2xl">{issue.title}</CardTitle>
-
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                    <div className="flex items-center">
-                      <User className="mr-1 h-4 w-4" />
-                      Reported by {issue.reporter.name}
-                    </div>
-                    <div className="flex items-center">
-                      <Calendar className="mr-1 h-4 w-4" />
-                      {new Date(issue.createdAt).toLocaleDateString()}
-                    </div>
-                    <div className="flex items-center">
-                      <MapPin className="mr-1 h-4 w-4" />
-                      {issue.location.address}
-                    </div>
-                  </div>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Photos ({images.length})</CardTitle>
                 </CardHeader>
-
-                <CardContent className="space-y-6">
-                  <p className="text-foreground leading-relaxed">{issue.description}</p>
-
-                  {/* Images */}
-                  {
-                    issue.images && issue.images.length > 0 && (
-                      <div className="space-y-2">
-                      <h4 className="font-medium text-foreground">Photos</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                      {issue.images.map((image, index) => (
-                        <img
-                        key={index}
-                        src={image}
-                        alt={`Issue photo ${index + 1}`}
-                        className="w-full h-48 object-cover rounded-lg border"
-                        />
-                      ))}
-                      </div>
-                      </div>
-                    )
-                  }
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-4 pt-4">
-                    <Button
-                      variant={hasUpvoted ? "default" : "outline"}
-                      onClick={handleUpvote}
-                      className="flex items-center"
+                <CardContent>
+                  {images.length === 1 ? (
+                    <div
+                      className="relative rounded-xl overflow-hidden cursor-zoom-in group"
+                      onClick={() => setLightboxIdx(0)}
                     >
-                      <ThumbsUp className={`mr-2 h-4 w-4 ${hasUpvoted ? 'fill-current' : ''}`} />
-                      {issue.upvotes + (hasUpvoted ? 1 : 0)} Upvotes
-                    </Button>
-
-                    {user?.role === 'citizen' && (
-                      <>
-                        <Button
-                          variant="outline"
-                          onClick={() => handleVerification('confirm')}
-                          className="flex items-center text-success border-success hover:bg-success/10"
-                        >
-                          <CheckCircle className="mr-2 h-4 w-4" />
-                          Confirm
-                        </Button>
-
-                        <Button
-                          variant="outline"
-                          onClick={() => handleVerification('deny')}
-                          className="flex items-center text-destructive border-destructive hover:bg-destructive/10"
-                        >
-                          <X className="mr-2 h-4 w-4" />
-                          Deny
-                        </Button>
-                      </>
-                    )}
-                  </div>
+                      <img
+                        src={apiService.getImageUrl(images[0])}
+                        alt="Issue photo"
+                        className="w-full max-h-80 object-cover"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                        <ZoomIn className="text-white opacity-0 group-hover:opacity-100 h-8 w-8 drop-shadow-lg transition-opacity" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={`grid gap-2 ${images.length === 2 ? 'grid-cols-2' : images.length === 3 ? 'grid-cols-2' : 'grid-cols-2'}`}>
+                      {images.slice(0, 4).map((img, idx) => {
+                        const src = apiService.getImageUrl(img);
+                        const isLast = idx === 3 && images.length > 4;
+                        return (
+                          <div
+                            key={idx}
+                            className={`relative rounded-xl overflow-hidden cursor-zoom-in group bg-muted
+                              ${idx === 0 && images.length === 3 ? 'col-span-2' : ''}`}
+                            style={{ aspectRatio: images.length === 2 ? '16/10' : '4/3' }}
+                            onClick={() => setLightboxIdx(idx)}
+                          >
+                            <img src={src} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                            {isLast && (
+                              <div className="absolute inset-0 bg-black/55 flex items-center justify-center text-white font-bold text-xl">
+                                +{images.length - 4}
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors flex items-center justify-center">
+                              <ZoomIn className="text-white opacity-0 group-hover:opacity-100 h-6 w-6 drop-shadow transition-opacity" />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
+            )}
 
-              {/* Community Verifications */}
-              {issue.verifications.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Community Verifications</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {issue.verifications.map((verification) => (
-                      <div key={verification.id} className="flex items-start gap-3">
-                        <div className={`p-1 rounded-full ${verification.type === 'confirm' ? 'bg-success/10' : 'bg-destructive/10'}`}>
-                          {verification.type === 'confirm' ? (
-                            <CheckCircle className="h-4 w-4 text-success" />
-                          ) : (
-                            <X className="h-4 w-4 text-destructive" />
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-sm">{verification.user}</p>
-                          <p className="text-sm text-muted-foreground">{verification.comment}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {new Date(verification.timestamp).toLocaleDateString()}
+            {/* Status timeline */}
+            {issue.statusHistory && issue.statusHistory.length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Clock className="h-4 w-4" /> Status Timeline
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="relative pl-5">
+                    <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
+                    {issue.statusHistory.map((entry, idx) => (
+                      <div key={idx} className="relative flex gap-3 pb-4 last:pb-0">
+                        <div className={`absolute -left-5 mt-1 h-3.5 w-3.5 rounded-full border-2 border-background shadow-sm z-10
+                          ${idx === 0 ? 'bg-primary' : 'bg-muted-foreground/40'}`} />
+                        <div className="ml-1">
+                          <p className="text-sm font-medium">{STATUS_LABELS[entry.status] || entry.status}</p>
+                          {entry.remark && <p className="text-xs text-muted-foreground">{entry.remark}</p>}
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {new Date(entry.changedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
                       </div>
                     ))}
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Comments */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <MessageSquare className="mr-2 h-5 w-5" />
-                    Comments ({comments.length})
-                  </CardTitle>
-                </CardHeader>
-
-                <CardContent className="space-y-6">
-                  {/* Add Comment */}
-                  {user && (
-                    <div className="space-y-3">
-                      <Textarea
-                        placeholder="Add a comment..."
-                        value={comment}
-                        onChange={(e) => setComment(e.target.value)}
-                        rows={3}
-                      />
-                      <Button onClick={handleComment} disabled={!comment.trim()}>
-                        Post Comment
-                      </Button>
-                    </div>
-                  )}
-
-                  <Separator />
-
-                  {/* Comments List */}
-                  <div className="space-y-4">
-                    {comments.map((comment) => (
-                      <div key={comment.id} className="flex gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarImage src={comment.avatar} />
-                          <AvatarFallback>{comment.user.charAt(0)}</AvatarFallback>
-                        </Avatar>
-
-                        <div className="flex-1 space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">{comment.user}</span>
-                            <Badge variant="outline" className="text-xs">
-                              {comment.civicScore} civic score
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(comment.timestamp).toLocaleDateString()}
-                            </span>
-                          </div>
-                          <p className="text-sm text-foreground">{comment.comment}</p>
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 </CardContent>
               </Card>
-            </div>
+            )}
 
-            {/* Sidebar */}
-            <div className="space-y-6">
-              {/* Issue Status */}
-
+            {/* Community actions */}
+            {user && user.role === 'citizen' && (
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Status Information</CardTitle>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Community Actions</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Assigned to</p>
-                    <p className="text-foreground">{issue.assignedTo}</p>
+                  <div className="flex gap-3">
+                    <Button
+                      variant={hasUpvoted ? 'default' : 'outline'}
+                      className="flex-1"
+                      onClick={handleUpvote}
+                      disabled={upvoteLoading}
+                    >
+                      {upvoteLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ThumbsUp className="h-4 w-4 mr-2" />}
+                      {hasUpvoted ? 'Upvoted' : 'Upvote'} ({issue.upvotes?.length ?? 0})
+                    </Button>
+
+                    {!hasVerified && (
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setShowVerifyForm(!showVerifyForm)}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" /> Verify Issue
+                      </Button>
+                    )}
+                    {hasVerified && (
+                      <Button variant="outline" className="flex-1 border-emerald-300 text-emerald-700" disabled>
+                        <CheckCircle className="h-4 w-4 mr-2" /> Verified ✓
+                      </Button>
+                    )}
                   </div>
 
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Last updated</p>
-                    <p className="text-foreground">{new Date(issue.updatedAt).toLocaleDateString()}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Estimated resolution</p>
-                    <p className="text-foreground">{new Date(issue.estimatedResolution).toLocaleDateString()}</p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Reporter Info */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Reporter Information</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-3">
-
-                    <Avatar>
-                      <AvatarImage src={issue.reporter.avatar} />
-                      <AvatarFallback>{issue.reporter.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-
-                    <div>
-                      <p className="font-medium text-foreground">{issue.reporter.name}</p>
-                      <div className="flex items-center text-sm text-muted-foreground">
-                        Civic Score: {issue.reporter.civicScore || 0}
+                  {showVerifyForm && (
+                    <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
+                      <p className="text-sm font-medium">Can you confirm this issue exists?</p>
+                      <Textarea
+                        placeholder="Optional: add a comment about what you observed…"
+                        value={verifyComment}
+                        onChange={e => setVerifyComment(e.target.value)}
+                        rows={2}
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={handleVerify} disabled={verifyLoading}>
+                          {verifyLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <CheckCircle className="h-3.5 w-3.5 mr-1" />}
+                          Yes, I confirm
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setShowVerifyForm(false)}>Cancel</Button>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
+            )}
+          </div>
 
-              {/* Location */}
+          {/* Sidebar */}
+          <div className="space-y-5">
+            {/* Reporter info */}
+            <Card>
+              <CardContent className="pt-5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Reported by</p>
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-10 w-10">
+                    <AvatarFallback className="bg-primary/10 text-primary font-semibold">
+                      {reporter?.name?.charAt(0).toUpperCase() || '?'}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="font-medium text-sm">{reporter?.name || 'Anonymous'}</p>
+                    <p className="text-xs text-muted-foreground">{reporter?.email || ''}</p>
+                  </div>
+                </div>
+
+                <Separator className="my-4" />
+
+                <div className="space-y-2.5 text-sm">
+                  {issue.location.address && (
+                    <div className="flex items-start gap-2">
+                      <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <span className="text-muted-foreground leading-snug">{issue.location.address}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">
+                      {new Date(issue.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </span>
+                  </div>
+                  {issue.verifiedBy && issue.verifiedBy.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-4 w-4 text-emerald-600" />
+                      <span className="text-emerald-700 text-xs font-medium">{issue.verifiedBy.length} community verification{issue.verifiedBy.length !== 1 ? 's' : ''}</span>
+                    </div>
+                  )}
+                  {issue.priorityScore !== undefined && (
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-muted-foreground">Priority score: <span className="font-semibold text-foreground">{issue.priorityScore}</span></span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Admin remarks */}
+            {issue.adminRemarks && (
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Location</CardTitle>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Shield className="h-4 w-4" /> Official Update
+                  </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  <p className="text-foreground">{issue.location.address}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Coordinates: {issue.location.coordinates}
-                  </p>
-                  <Link to='/map'>
-                    <Button variant="outline" className="w-full">
-                      <MapPin className="mr-2 h-4 w-4" />
-                      View on Map
-                    </Button>
-                  </Link>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{issue.adminRemarks}</p>
+                  {issue.assignedDepartment && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Assigned to: <span className="font-medium text-foreground">{issue.assignedDepartment}</span>
+                    </p>
+                  )}
                 </CardContent>
               </Card>
-            </div>
+            )}
+
+            {/* Official status updater */}
+            {user && (user.role === 'official' || user.role === 'admin') && (
+              <OfficialActions issue={issue} onUpdated={loadIssue} />
+            )}
           </div>
         </div>
       </div>
-    </>
+    </div>
+  );
+};
+
+// Sub-component for official actions
+const OfficialActions = ({ issue, onUpdated }: { issue: Issue; onUpdated: () => void }) => {
+  const { toast } = useToast();
+  const [status, setStatus] = useState(issue.status);
+  const [remarks, setRemarks] = useState(issue.adminRemarks || '');
+  const [dept, setDept] = useState(issue.assignedDepartment || '');
+  const [loading, setLoading] = useState(false);
+
+  const update = async () => {
+    setLoading(true);
+    try {
+      await apiService.updateIssueStatus(issue._id, status, remarks, dept);
+      toast({ title: '✅ Issue updated' });
+      onUpdated();
+    } catch (err) {
+      toast({ title: 'Update failed', variant: 'destructive' });
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <Card className="border-primary/20">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Shield className="h-4 w-4 text-primary" /> Official Controls
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Status</label>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {['pending','under-review','verified','assigned','work-started','completed','closed','rejected'].map(s => (
+                <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Department</label>
+          <input
+            className="w-full h-8 rounded-md border border-input bg-background px-3 text-sm"
+            placeholder="e.g. Roads & Infrastructure"
+            value={dept} onChange={e => setDept(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Remarks</label>
+          <Textarea rows={2} placeholder="Update for the reporter…" value={remarks} onChange={e => setRemarks(e.target.value)} />
+        </div>
+        <Button size="sm" className="w-full" onClick={update} disabled={loading}>
+          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />} Save Update
+        </Button>
+      </CardContent>
+    </Card>
   );
 };
 

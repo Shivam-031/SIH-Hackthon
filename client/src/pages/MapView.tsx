@@ -1,420 +1,377 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Navbar } from '@/components/Navbar';
 import { useAuth } from '@/contexts/AuthContext';
-import {
-  ArrowLeft,
-  Navigation,
-  Filter,
-  MapPin,
-  Clock,
-  CheckCircle,
-  AlertTriangle,
-  TrendingUp,
-  MessageSquare
-} from 'lucide-react';
 import apiService from '@/services/api';
-import { type } from 'os';
+import type { Issue } from '@/types';
+import { MAP_STATUS_COLOR, STATUS_LABELS, CATEGORY_EMOJI, CATEGORY_LABELS, getCoordinates } from '@/lib/issueHelpers';
+import {
+  ArrowLeft, Navigation, MapPin, TrendingUp, Filter,
+  Layers, ChevronRight, X, RefreshCw, AlertTriangle
+} from 'lucide-react';
+
+// Fix Leaflet default icon paths broken by Vite
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl:       'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl:     'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
+
+const createMarkerIcon = (color: string, size: number = 14) =>
+  L.divIcon({
+    className: '',
+    html: `<div style="
+      background:${color};width:${size}px;height:${size}px;
+      border-radius:50%;border:2.5px solid white;
+      box-shadow:0 2px 6px rgba(0,0,0,.35);
+      transition:transform .15s;
+    "></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+
+const userIcon = L.divIcon({
+  className: '',
+  html: `<div style="
+    background:#3b82f6;width:18px;height:18px;border-radius:50%;
+    border:3px solid white;box-shadow:0 0 0 4px rgba(59,130,246,.25);
+  "></div>`,
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+});
+
+const TILE_LAYERS = {
+  street: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', label: 'Street' },
+  satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', label: 'Satellite' },
+};
 
 const MapView = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
-  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
-  const [selectedIssue, setSelectedIssue] = useState<any>(null);
-  const [issues, setnearbyIssues] = useState([]);
+  const mapInstance = useRef<L.Map | null>(null);
+  const markersLayer = useRef<L.LayerGroup | null>(null);
+  const userMarker = useRef<L.Marker | null>(null);
+
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [filtered, setFiltered] = useState<Issue[]>([]);
+  const [selected, setSelected] = useState<Issue | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [tileLayer, setTileLayer] = useState<'street' | 'satellite'>('street');
+  const currentTile = useRef<L.TileLayer | null>(null);
+
+  // Load issues
+  const loadIssues = async () => {
+    setLoading(true);
+    try {
+      const res = await apiService.getIssues({ limit: 200 });
+      setIssues(res.data.issues);
+    } catch { /* silent */ } finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadIssues(); }, []);
+
+  // Apply filters
   useEffect(() => {
-    const fetchIssues = async () => {
-      try {
-        const data2 = await apiService.getIssues();
-        setnearbyIssues(data2.issues);
-        // console.log(data2.issues);
-      } catch (error) {
-        console.error(error);
-      }
-    }
-    fetchIssues();
+    let out = issues;
+    if (statusFilter !== 'all') out = out.filter(i => i.status === statusFilter);
+    if (categoryFilter !== 'all') out = out.filter(i => i.category === categoryFilter);
+    setFiltered(out);
+  }, [issues, statusFilter, categoryFilter]);
+
+  // Init map
+  useEffect(() => {
+    if (!mapRef.current || mapInstance.current) return;
+    const map = L.map(mapRef.current, { zoomControl: false }).setView([20.5937, 78.9629], 5);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    currentTile.current = L.tileLayer(TILE_LAYERS.street.url, {
+      attribution: '© OpenStreetMap',
+      maxZoom: 19,
+    }).addTo(map);
+    markersLayer.current = L.layerGroup().addTo(map);
+    mapInstance.current = map;
+    return () => { map.remove(); mapInstance.current = null; };
   }, []);
 
-  // Mock issues data with coordinates
-  const issues2 = [
-    {
-      id: '1',
-      title: 'Multiple potholes on Highway 42',
-      category: 'pothole',
-      status: 'pending',
-      priority: 'high',
-      reporter: 'John Doe',
-      location: 'Highway 42, Sector 15',
-      coordinates: [28.35173, 77.26155],
-      date: '2024-01-18',
-      upvotes: 24,
-      comments: 8,
-      verified: true
-    },
-    {
-      id: '2',
-      title: 'Street light not working',
-      category: 'streetlight',
-      status: 'in-progress',
-      priority: 'medium',
-      reporter: 'Sarah Johnson',
-      location: 'Park Avenue, Block C',
-      coordinates: [28.618168, 77.367754] as [number, number],
-      date: '2024-01-17',
-      upvotes: 12,
-      comments: 3,
-      verified: true
-    },
-    {
-      id: '3',
-      title: 'Garbage collection needed',
-      category: 'garbage',
-      status: 'resolved',
-      priority: 'low',
-      reporter: 'Mike Wilson',
-      location: 'Elm Street',
-      coordinates: [40.7505, -73.9934] as [number, number],
-      date: '2024-01-16',
-      upvotes: 7,
-      comments: 2,
-      verified: false
-    },
-    {
-      id: '4',
-      title: 'Water leak on Park Avenue',
-      category: 'water-leak',
-      status: 'acknowledged',
-      priority: 'high',
-      reporter: 'Emily Davis',
-      location: 'Park Avenue, Block B',
-      coordinates: [40.7614, -73.9776] as [number, number],
-      date: '2024-01-19',
-      upvotes: 18,
-      comments: 5,
-      verified: true
-    },
-    {
-      id: '5',
-      title: 'Road damage after construction',
-      category: 'road-damage',
-      status: 'pending',
-      priority: 'medium',
-      reporter: 'Alex Smith',
-      location: 'Broadway Street',
-      coordinates: [40.7675, -73.9776] as [number, number],
-      date: '2024-01-20',
-      upvotes: 15,
-      comments: 4,
-      verified: true
-    },
-    {
-      id: '6',
-      title: 'Traffic signal malfunction',
-      category: 'traffic-signal',
-      status: 'in-progress',
-      priority: 'high',
-      reporter: 'Lisa Brown',
-      location: '5th Avenue Junction',
-      coordinates: [40.7484, -73.9857] as [number, number],
-      date: '2024-01-21',
-      upvotes: 32,
-      comments: 12,
-      verified: true
-    }
-  ];
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return '#f59e0b'; // yellow/orange
-      case 'acknowledged': return '#3b82f6'; // blue
-      case 'in-progress': return '#3b82f6'; // blue
-      case 'resolved': return '#10b981'; // green
-      default: return '#6b7280'; // gray
-    }
-  };
-
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-warning/10 text-warning-foreground';
-      case 'acknowledged': return 'bg-info/10 text-info-foreground';
-      case 'in-progress': return 'bg-primary/10 text-primary-foreground';
-      case 'resolved': return 'bg-success/10 text-success-foreground';
-      default: return 'bg-muted text-muted-foreground';
-    }
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'bg-destructive/10 text-destructive-foreground';
-      case 'medium': return 'bg-warning/10 text-warning-foreground';
-      case 'low': return 'bg-success/10 text-success-foreground';
-      default: return 'bg-muted text-muted-foreground';
-    }
-  };
-
-  const getCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          setUserLocation([latitude, longitude]);
-
-          if (mapInstanceRef.current) {
-            mapInstanceRef.current.setView([latitude, longitude], 13);
-
-            // Add user location marker
-            const userMarker = L.marker([latitude, longitude], {
-              icon: L.divIcon({
-                className: 'custom-marker',
-                html: '<div style="background-color: #ef4444; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>',
-                iconSize: [20, 20],
-                iconAnchor: [10, 10]
-              })
-            }).addTo(mapInstanceRef.current);
-
-            userMarker.bindPopup('Your Location');
-          }
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-        }
-      );
-    }
-  };
-
+  // Switch tile layer
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapInstance.current) return;
+    currentTile.current?.remove();
+    currentTile.current = L.tileLayer(TILE_LAYERS[tileLayer].url, {
+      attribution: '© OpenStreetMap / Esri',
+      maxZoom: 19,
+    }).addTo(mapInstance.current);
+  }, [tileLayer]);
 
-    // Initialize map
-    const map = L.map(mapRef.current).setView([28.618168, 77.36775], 14);
-    mapInstanceRef.current = map;
+  // Render markers whenever filtered issues change
+  useEffect(() => {
+    if (!mapInstance.current || !markersLayer.current) return;
+    markersLayer.current.clearLayers();
 
-    // Add OpenStreetMap tiles
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
+    filtered.forEach(issue => {
+      const coords = getCoordinates(issue.location);
+      if (!coords) return;
+      const color = MAP_STATUS_COLOR[issue.status] || '#6b7280';
+      const marker = L.marker(coords, { icon: createMarkerIcon(color) });
+      marker.on('click', () => {
+        setSelected(issue);
+        mapInstance.current?.setView(coords, 15, { animate: true });
+      });
+      marker.bindTooltip(
+        `<div style="font-weight:600;font-size:12px">${issue.title}</div>
+         <div style="font-size:11px;color:#666">${CATEGORY_LABELS[issue.category] || issue.category}</div>`,
+        { direction: 'top', offset: [0, -8] }
+      );
+      markersLayer.current!.addLayer(marker);
+    });
+  }, [filtered]);
 
-    // Add markers for each issue
-    const ForMethod = () => {
+  const locateUser = () => {
+    navigator.geolocation?.getCurrentPosition(pos => {
+      const { latitude: lat, longitude: lng } = pos.coords;
+      if (!mapInstance.current) return;
+      mapInstance.current.setView([lat, lng], 14, { animate: true });
+      userMarker.current?.remove();
+      userMarker.current = L.marker([lat, lng], { icon: userIcon })
+        .addTo(mapInstance.current)
+        .bindPopup('You are here');
+    });
+  };
 
-      issues.forEach((issue) => {
-        const {coordinates,latitude,longitude} = issue.location;
-        let coordinate ;
-        if(coordinates){
-          coordinate = [coordinates[1],coordinates[0]] as [number, number];
-          // console.log( coordinate);
-        }else if(latitude){
-          coordinate = [latitude,longitude];
-        }else{
-          coordinate = [28.618168, 77.36775];
-        }
-        // console.log( coordinate);
+  const stats = {
+    total:      filtered.length,
+    pending:    filtered.filter(i => i.status === 'pending').length,
+    inProgress: filtered.filter(i => ['under-review','verified','assigned','work-started'].includes(i.status)).length,
+    resolved:   filtered.filter(i => ['completed','closed'].includes(i.status)).length,
+  };
 
-        const marker = L.marker(coordinate || [28.618168, 77.36775], {
-          icon: L.divIcon({
-            className: 'custom-marker',
-            html: `<div style="background-color: ${getStatusColor(issue.status)}; width: 20px; height: 20px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
-            iconSize: [20, 20],
-            iconAnchor: [10, 10]
-          })
-        }).addTo(map);
-        
-        marker.on('click', () => {
-          setSelectedIssue(issue);
-        });
-        
-        marker.bindPopup(`
-          <div style="min-width: 200px;">
-          <h3 style="margin: 0 0 8px 0; font-weight: bold; font-size: 14px;">${issue.title}</h3>
-          <p style="margin: 4px 0; color: #666; font-size: 12px;">📍 ${issue.location.address}</p>
-          <p style="margin: 4px 0; color: #666; font-size: 12px;">Status: <span style="color: ${getStatusColor(issue.status)}; font-weight: bold;">${issue.status}</span></p>
-          <p style="margin: 4px 0; color: #666; font-size: 12px;">👍 ${issue.upvotes} upvotes • 💬 ${issue.comments} comments</p>
-          </div>
-          `);
-        })
-      } 
-      ForMethod();
-
-    return () => {
-      map.remove();
-    };
-  }, [issues]);
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Navbar />
-        <div className="container mx-auto px-4 py-8 text-center">
-          <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
-          <p className="text-muted-foreground">Please log in to view the map.</p>
-        </div>
-      </div>
-    );
-  }
+  const selectedCoords = selected ? getCoordinates(selected.location) : null;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       <Navbar />
 
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
+      <div className="flex-1 flex flex-col">
+        {/* Top bar */}
+        <div className="border-b bg-background px-4 py-3 flex flex-wrap items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4 mr-1" /> Back
+          </Button>
+          <div className="h-5 w-px bg-border" />
+          <h1 className="font-semibold text-base">Civic Issues Map</h1>
+          <div className="flex items-center gap-2 ml-auto flex-wrap">
+            {/* Status filter */}
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="All statuses" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {['pending','under-review','verified','assigned','work-started','completed','closed','rejected'].map(s => (
+                  <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* Category filter */}
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="h-8 w-36 text-xs"><SelectValue placeholder="All categories" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All categories</SelectItem>
+                {Object.entries(CATEGORY_LABELS).filter(([v]) => !v.startsWith('road-damage') || v === 'road-damage').map(([v, l]) => (
+                  <SelectItem key={v} value={v}>{CATEGORY_EMOJI[v]} {l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* Tile switcher */}
             <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/citizen-dashboard')}
-              className="flex items-center"
+              variant="outline" size="sm" className="h-8 text-xs"
+              onClick={() => setTileLayer(tileLayer === 'street' ? 'satellite' : 'street')}
             >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Dashboard
+              <Layers className="h-3.5 w-3.5 mr-1" />
+              {tileLayer === 'street' ? 'Satellite' : 'Street'}
             </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Civic Issues Map</h1>
-              <p className="text-muted-foreground">View and explore reported issues in your area</p>
-            </div>
+            <Button variant="outline" size="sm" className="h-8" onClick={loadIssues}>
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="flex flex-1 overflow-hidden">
           {/* Map */}
-          <div className="lg:col-span-2">
-            <Card>
-              <CardContent className="p-0">
-                <div className="relative">
-                  <div ref={mapRef} style={{ height: '600px', width: '100%' }} className="rounded-lg" />
+          <div className="relative flex-1">
+            <div ref={mapRef} className="w-full h-full min-h-[500px]" />
 
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={getCurrentLocation}
-                    className="absolute top-4 right-4 z-[1000] bg-white shadow-md hover:bg-slate-50"
-                  >
-                    <Navigation className="w-4 h-4 mr-1" />
-                    My Location
-                  </Button>
+            {/* My location button */}
+            <Button
+              variant="secondary" size="sm"
+              onClick={locateUser}
+              className="absolute top-4 right-4 z-[1000] shadow-md"
+            >
+              <Navigation className="h-4 w-4 mr-1.5" /> My Location
+            </Button>
+
+            {/* Loading overlay */}
+            {loading && (
+              <div className="absolute inset-0 z-[999] flex items-center justify-center bg-background/60 backdrop-blur-sm">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <RefreshCw className="h-4 w-4 animate-spin" /> Loading issues…
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            )}
+
+            {/* Legend */}
+            <div className="absolute bottom-4 left-4 z-[1000] bg-background/95 backdrop-blur rounded-lg border shadow-sm p-3 space-y-1.5">
+              {[
+                ['#f59e0b', 'Pending'],
+                ['#6366f1', 'Under Review'],
+                ['#3b82f6', 'Assigned'],
+                ['#10b981', 'Completed'],
+                ['#ef4444', 'Rejected'],
+                ['#3b82f6', 'You'],
+              ].map(([color, label], i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <div className="h-3 w-3 rounded-full shrink-0 border border-white shadow-sm" style={{ background: color }} />
+                  <span className="text-xs text-muted-foreground">{label}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Legend */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Legend</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-warning border-2 border-white shadow-sm"></div>
-                  <span className="text-sm">Pending</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-primary border-2 border-white shadow-sm"></div>
-                  <span className="text-sm">In Progress / Acknowledged</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-success border-2 border-white shadow-sm"></div>
-                  <span className="text-sm">Resolved</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-destructive border-2 border-white shadow-sm"></div>
-                  <span className="text-sm">Your Location</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Issue Details */}
-            {selectedIssue && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Issue Details</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <h3 className="font-semibold text-foreground mb-2">{selectedIssue.title}</h3>
-                    <p className="text-sm text-muted-foreground flex items-center">
-                      <MapPin className="mr-1 h-3 w-3" />
-                      {selectedIssue.location.address}
-                    </p>
+          <div className="w-80 border-l bg-background overflow-y-auto flex flex-col">
+            {/* Stats */}
+            <div className="p-4 border-b">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Overview</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'Showing',    value: stats.total,      color: 'text-foreground' },
+                  { label: 'Pending',    value: stats.pending,    color: 'text-amber-600' },
+                  { label: 'In Progress',value: stats.inProgress, color: 'text-blue-600' },
+                  { label: 'Resolved',   value: stats.resolved,   color: 'text-emerald-600' },
+                ].map(s => (
+                  <div key={s.label} className="bg-muted/50 rounded-lg p-2.5">
+                    <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+                    <p className="text-xs text-muted-foreground">{s.label}</p>
                   </div>
+                ))}
+              </div>
+            </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <Badge className={getStatusBadgeColor(selectedIssue.status)}>
-                      {selectedIssue.status}
+            {/* Selected issue detail */}
+            {selected ? (
+              <div className="p-4 space-y-4 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Selected Issue</p>
+                  <button onClick={() => setSelected(null)} className="text-muted-foreground hover:text-foreground">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-base leading-snug mb-2">{selected.title}</h3>
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    <Badge
+                      className="text-xs border"
+                      style={{ background: MAP_STATUS_COLOR[selected.status] + '20', color: MAP_STATUS_COLOR[selected.status], borderColor: MAP_STATUS_COLOR[selected.status] + '40' }}
+                    >
+                      {STATUS_LABELS[selected.status] || selected.status}
                     </Badge>
-                    <Badge className={getPriorityColor(selectedIssue.priority)}>
-                      {selectedIssue.priority} priority
-                    </Badge>
-                    {selectedIssue.verified && (
-                      <Badge variant="outline" className="text-success">
-                        Verified
+                    {selected.severity && (
+                      <Badge variant="outline" className="text-xs">
+                        {selected.severity}
                       </Badge>
                     )}
+                    <Badge variant="outline" className="text-xs">
+                      {CATEGORY_EMOJI[selected.category]} {CATEGORY_LABELS[selected.category] || selected.category}
+                    </Badge>
                   </div>
 
-                  <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>By {selectedIssue.reportedBy.name}</span>
-                    <span>{selectedIssue.date}</span>
+                  {selected.location.address && (
+                    <p className="text-sm text-muted-foreground flex items-start gap-1.5 mb-3">
+                      <MapPin className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      {selected.location.address}
+                    </p>
+                  )}
+
+                  {/* Images preview */}
+                  {selected.images && selected.images.length > 0 && (
+                    <div className="grid grid-cols-2 gap-1.5 mb-3 rounded-lg overflow-hidden">
+                      {selected.images.slice(0, 4).map((img, i) => {
+                        const src = apiService.getImageUrl(img);
+                        return src ? (
+                          <div key={i} className="relative aspect-video bg-muted overflow-hidden rounded">
+                            <img src={src} alt={`Issue photo ${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                            {i === 3 && selected.images.length > 4 && (
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-sm font-semibold">
+                                +{selected.images.length - 4} more
+                              </div>
+                            )}
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
+                    <span className="flex items-center gap-1">
+                      <TrendingUp className="h-3 w-3" /> {selected.upvotes?.length ?? 0} upvotes
+                    </span>
+                    <span>
+                      {typeof selected.reportedBy === 'object' ? selected.reportedBy.name : 'Anonymous'}
+                    </span>
                   </div>
 
-                  <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                    <span className="flex items-center">
-                      <TrendingUp className="mr-1 h-3 w-3" />
-                      {selectedIssue.upvotes}
-                    </span>
-                    <span className="flex items-center">
-                      <MessageSquare className="mr-1 h-3 w-3" />
-                      {selectedIssue.comments}
-                    </span>
-                  </div>
-                  <Link to={`/issue/${selectedIssue._id}`}>
-                  <Button size="sm" className="w-full" >
-                    View Full Details
-                  </Button>
+                  <Link to={`/issue/${selected._id}`}>
+                    <Button size="sm" className="w-full">
+                      View Full Details <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
                   </Link>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-muted-foreground">
+                <MapPin className="h-10 w-10 mb-3 opacity-30" />
+                <p className="text-sm">Click a marker on the map to see issue details.</p>
+              </div>
             )}
 
-            {/* Quick Stats */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Quick Stats</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Total Issues:</span>
-                  <span className="font-semibold">{issues.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Pending:</span>
-                  <span className="font-semibold text-warning">
-                    {issues.filter(i => i.status === 'pending').length}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">In Progress:</span>
-                  <span className="font-semibold text-primary">
-                    {issues.filter(i => i.status === 'in-progress' || i.status === 'acknowledged').length}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Resolved:</span>
-                  <span className="font-semibold text-success">
-                    {issues.filter(i => i.status === 'resolved').length}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
+            {/* Issue list */}
+            <div className="border-t">
+              <div className="p-4 pb-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Recent Issues ({filtered.length})
+                </p>
+              </div>
+              <div className="overflow-y-auto max-h-72">
+                {filtered.slice(0, 20).map(issue => {
+                  const color = MAP_STATUS_COLOR[issue.status] || '#6b7280';
+                  const coords = getCoordinates(issue.location);
+                  return (
+                    <button
+                      key={issue._id}
+                      className={`w-full text-left px-4 py-3 border-b hover:bg-muted/50 transition-colors flex items-start gap-3 ${selected?._id === issue._id ? 'bg-primary/5' : ''}`}
+                      onClick={() => {
+                        setSelected(issue);
+                        if (coords && mapInstance.current) mapInstance.current.setView(coords, 15, { animate: true });
+                      }}
+                    >
+                      <div className="h-2.5 w-2.5 rounded-full mt-1.5 shrink-0 border border-white shadow-sm" style={{ background: color }} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{issue.title}</p>
+                        <p className="text-xs text-muted-foreground truncate">{issue.location.address || 'Location not specified'}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       </div>

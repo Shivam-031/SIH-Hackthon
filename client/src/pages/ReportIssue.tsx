@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,251 +11,173 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import apiService from '@/services/api';
 import {
-  MapPin,
-  Camera,
-  Upload,
-  Loader2,
-  X,
-  CheckCircle,
-  Search,
-  Navigation,
-  Globe
+  MapPin, Camera, Upload, Loader2, X, CheckCircle, Plus,
+  Search, Navigation, Globe, ImagePlus, AlertCircle
 } from 'lucide-react';
+
+const CATEGORIES = [
+  { value: 'road-damage',    label: '🛣️ Road Damage' },
+  { value: 'garbage',        label: '🗑️ Garbage' },
+  { value: 'water-leakage',  label: '💧 Water Leakage' },
+  { value: 'electricity',    label: '⚡ Electricity' },
+  { value: 'street-light',   label: '💡 Street Light' },
+  { value: 'illegal-parking',label: '🚗 Illegal Parking' },
+  { value: 'pothole',        label: '🕳️ Pothole' },
+  { value: 'tree-fallen',    label: '🌳 Tree Fallen' },
+  { value: 'pollution',      label: '🌫️ Pollution' },
+  { value: 'animal-issue',   label: '🐾 Animal Issue' },
+  { value: 'public-safety',  label: '🛡️ Public Safety' },
+  { value: 'other',          label: '📋 Other' },
+];
+
+const SEVERITIES = [
+  { value: 'low',      label: 'Low — Minor inconvenience', color: 'text-green-600' },
+  { value: 'medium',   label: 'Medium — Needs attention',  color: 'text-yellow-600' },
+  { value: 'high',     label: 'High — Safety concern',     color: 'text-orange-600' },
+  { value: 'critical', label: 'Critical — Immediate risk', color: 'text-red-600' },
+];
+
+interface ImagePreview {
+  file: File;
+  previewUrl: string;
+}
 
 const ReportIssue = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [formData, setFormData] = useState<any>({
-    title: '',
-    description: '',
-    category: '',
-    location: '',
-    address: ''
+
+  const [isLoading, setIsLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    title: '', description: '', category: '', severity: 'medium',
+    latitude: '', longitude: '', address: '',
   });
-  const [images, setImages] = useState<File[]>([]);
-  const [locationDetected, setLocationDetected] = useState(false);
-  
-  // Location search states
+  const [images, setImages] = useState<ImagePreview[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<'none' | 'detecting' | 'set'>('none');
   const [locationQuery, setLocationQuery] = useState('');
-  const [locationSuggestions, setLocationSuggestions] = useState<object[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState<object>(null);
-  const [searchCountry, setSearchCountry] = useState<'in' | 'us' | 'global'>('in');
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [countryFilter, setCountryFilter] = useState<'in' | 'us' | 'global'>('in');
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropzoneRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const issueCategories = [
-    { value: 'pothole', label: 'Pothole' },
-    { value: 'streetlight', label: 'Street Light' },
-    { value: 'garbage', label: 'Garbage Collection' },
-    { value: 'water-leak', label: 'Water Leak' },
-    { value: 'road-damage', label: 'Road Damage' },
-    { value: 'traffic-signal', label: 'Traffic Signal' },
-    { value: 'drainage', label: 'Drainage Issue' },
-    { value: 'other', label: 'Other' }
-  ];
+  // Cleanup preview URLs on unmount
+  useEffect(() => () => images.forEach(i => URL.revokeObjectURL(i.previewUrl)), [images]);
+  useEffect(() => () => { if (searchTimeout.current) clearTimeout(searchTimeout.current); }, []);
 
-  // Location search functions
-  const searchLocations = async (query: string) => {
-    if (!query.trim() || query.length < 3) {
-      setLocationSuggestions([]);
-      return;
-    }
-
-    setIsSearchingLocation(true);
-    try {
-      let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=8&addressdetails=1`;
-      
-      // Add country filter based on selection
-      if (searchCountry !== 'global') {
-        url += `&countrycodes=${searchCountry}`;
-      }
-      
-      const response = await fetch(url);
-      const data = await response.json();
-      setLocationSuggestions(data);
-    } catch (error) {
-      console.error('Error searching locations:', error);
-      toast({
-        title: "Search error",
-        description: "Could not search for locations. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSearchingLocation(false);
-    }
-  };
-
-  const handleLocationSearch = (query: string) => {
-    setLocationQuery(query);
-    
-    // Clear previous timeout
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    // Set new timeout for search
-    searchTimeoutRef.current = setTimeout(() => {
-      searchLocations(query);
-    }, 500); // Debounce search by 500ms
-  };
-
-  const selectLocation = (location: any) => {
-    setSelectedLocation(location);
-    setLocationQuery(location.display_name);
-    setFormData(prev => ({
-      ...prev,
-      location: `${location.lat}, ${location.lon}`,
-      address: location.display_name
+  const addFiles = (files: FileList | null) => {
+    if (!files) return;
+    const allowed = Array.from(files).filter(f => f.type.startsWith('image/'));
+    const remaining = 5 - images.length;
+    const toAdd = allowed.slice(0, remaining).map(file => ({
+      file,
+      previewUrl: URL.createObjectURL(file),
     }));
+    setImages(prev => [...prev, ...toAdd]);
+    if (allowed.length > remaining) {
+      toast({ title: 'Max 5 photos', description: 'Only the first photos were added.', variant: 'destructive' });
+    }
+  };
+
+  const removeImage = (idx: number) => {
+    setImages(prev => {
+      URL.revokeObjectURL(prev[idx].previewUrl);
+      return prev.filter((_, i) => i !== idx);
+    });
+  };
+
+  // Drag-and-drop handlers
+  const onDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); }, []);
+  const onDragLeave = useCallback(() => setIsDragging(false), []);
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); setIsDragging(false);
+    addFiles(e.dataTransfer.files);
+  }, [images]);
+
+  // Location search
+  const searchLocation = async (q: string) => {
+    if (q.length < 3) { setSuggestions([]); return; }
+    setIsSearching(true);
+    try {
+      let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1`;
+      if (countryFilter !== 'global') url += `&countrycodes=${countryFilter}`;
+      const res = await fetch(url);
+      setSuggestions(await res.json());
+    } catch { /* silent */ } finally { setIsSearching(false); }
+  };
+
+  const handleLocationInput = (val: string) => {
+    setLocationQuery(val);
+    setShowSuggestions(true);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => searchLocation(val), 500);
+  };
+
+  const selectSuggestion = (s: any) => {
+    setFormData(p => ({ ...p, latitude: s.lat, longitude: s.lon, address: s.display_name }));
+    setLocationQuery(s.display_name);
+    setSuggestions([]);
     setShowSuggestions(false);
-    setLocationDetected(true);
-    toast({
-      title: "Location selected",
-      description: "Location has been added to your report.",
+    setLocationStatus('set');
+    toast({ title: '📍 Location set', description: s.display_name.split(',')[0] });
+  };
+
+  const detectLocation = () => {
+    if (!navigator.geolocation) return;
+    setLocationStatus('detecting');
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const { latitude, longitude } = pos.coords;
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+        const data = await res.json();
+        const address = data.display_name || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+        setFormData(p => ({ ...p, latitude: String(latitude), longitude: String(longitude), address }));
+        setLocationQuery(address);
+        setLocationStatus('set');
+        toast({ title: '📍 Location detected' });
+      } catch {
+        setFormData(p => ({ ...p, latitude: String(latitude), longitude: String(longitude), address: `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` }));
+        setLocationQuery(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+        setLocationStatus('set');
+      }
+    }, () => {
+      setLocationStatus('none');
+      toast({ title: 'Location denied', description: 'Please search for a location manually.', variant: 'destructive' });
     });
   };
 
   const clearLocation = () => {
-    setSelectedLocation(null);
-    setLocationQuery('');
-    setFormData(prev => ({
-      ...prev,
-      location: '',
-      address: ''
-    }));
-    setLocationDetected(false);
-    setLocationSuggestions([]);
-    setShowSuggestions(false);
-  };
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value
-    }));
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setImages(prev => [...prev, ...files].slice(0, 5)); // Max 5 images
-  };
-
-  const removeImage = (index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const detectLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          
-          try {
-            // Reverse geocoding to get address
-            const response = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`
-            );
-            const data = await response.json();
-            
-            const address = data.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-            
-            setSelectedLocation({
-              lat: latitude,
-              lon: longitude,
-              display_name: address
-            });
-            setLocationQuery(address);
-            setFormData(prev => ({
-              ...prev,
-              location: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-              address: address
-            }));
-            setLocationDetected(true);
-            toast({
-              title: "Location detected",
-              description: "Your current location has been added to the report.",
-            });
-          } catch (error) {
-            // Fallback to coordinates only
-            setSelectedLocation({
-              lat: latitude,
-              lon: longitude,
-              display_name: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-            });
-            setLocationQuery(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
-            setFormData(prev => ({
-              ...prev,
-              location: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-              address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-            }));
-            setLocationDetected(true);
-            toast({
-              title: "Location detected",
-              description: "Your current location has been added to the report.",
-            });
-          }
-        },
-        (error) => {
-          toast({
-            title: "Location error",
-            description: "Could not detect your location. Please search for a location instead.",
-            variant: "destructive",
-          });
-        }
-      );
-    }
+    setFormData(p => ({ ...p, latitude: '', longitude: '', address: '' }));
+    setLocationQuery(''); setSuggestions([]); setLocationStatus('none');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.title || !formData.category || !formData.location || !selectedLocation) {
-      toast({
-        title: "Missing information",
-        description: "Please fill in all required fields and select a location.",
-        variant: "destructive",
-      });
+    if (!formData.title || !formData.category || !formData.latitude) {
+      toast({ title: 'Missing fields', description: 'Fill in title, category, and location.', variant: 'destructive' });
       return;
     }
 
     setIsLoading(true);
-
     try {
-      await apiService.createIssue({
-        title: formData.title,
-        description: formData.description,
-        category: formData.category,
-        location: formData.location,
-        address: formData.address,
-        images: images || [] // TODO: Implement image upload
-      });
-      
-      toast({
-        title: "Issue reported successfully!",
-        description: "Your civic issue has been submitted for review.",
-      });
-      
+      const fd = new FormData();
+      fd.append('title', formData.title);
+      fd.append('description', formData.description);
+      fd.append('category', formData.category);
+      fd.append('severity', formData.severity);
+      fd.append('latitude', formData.latitude);
+      fd.append('longitude', formData.longitude);
+      fd.append('address', formData.address);
+      images.forEach(img => fd.append('images', img.file));
+
+      await apiService.createIssue(fd);
+      toast({ title: '✅ Issue reported!', description: 'Your report is now pending review.' });
       navigate('/citizen-dashboard');
-    } catch (error) {
-      toast({
-        title: "Submission failed",
-        description: error instanceof Error ? error.message : "Please try again later.",
-        variant: "destructive",
-      });
+    } catch (err) {
+      toast({ title: 'Submission failed', description: err instanceof Error ? err.message : 'Try again.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -265,8 +187,9 @@ const ReportIssue = () => {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
-        <div className="container mx-auto px-4 py-8 text-center">
-          <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
+        <div className="container mx-auto px-4 py-20 text-center">
+          <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+          <h1 className="text-2xl font-bold mb-2">Access Restricted</h1>
           <p className="text-muted-foreground">Only citizens can report issues.</p>
         </div>
       </div>
@@ -274,282 +197,239 @@ const ReportIssue = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-muted/30">
       <Navbar />
-      
       <div className="container mx-auto px-4 py-8 max-w-2xl">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Report Civic Issue</h1>
-          <p className="text-muted-foreground">
-            Help improve your community by reporting civic issues that need attention
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-foreground">Report an Issue</h1>
+          <p className="text-muted-foreground mt-1">
+            Help your community by documenting civic problems with photos and location.
           </p>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Issue Details</CardTitle>
-            <CardDescription>
-              Provide as much detail as possible to help authorities address the issue quickly
-            </CardDescription>
-          </CardHeader>
-          
-          <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-6">
-              {/* Issue Title */}
-              <div className="space-y-2">
-                <Label htmlFor="title">Issue Title *</Label>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Basic Info */}
+          <Card>
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg">Issue Details</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="title">Title <span className="text-destructive">*</span></Label>
                 <Input
-                  id="title"
-                  name="title"
-                  placeholder="Brief, descriptive title of the issue"
-                  value={formData.title}
-                  onChange={handleInputChange}
+                  id="title" placeholder="e.g. Large pothole blocking lane on MG Road"
+                  value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))}
                   required
                 />
               </div>
 
-              {/* Category */}
-              <div className="space-y-2">
-                <Label htmlFor="category">Category *</Label>
-                <Select value={formData.category} onValueChange={(value) => setFormData(prev => ({ ...prev, category: value }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select issue category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {issueCategories.map((category) => (
-                      <SelectItem key={category.value} value={category.value}>
-                        {category.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Category <span className="text-destructive">*</span></Label>
+                  <Select value={formData.category} onValueChange={v => setFormData(p => ({ ...p, category: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Choose category" /></SelectTrigger>
+                    <SelectContent>
+                      {CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Severity</Label>
+                  <Select value={formData.severity} onValueChange={v => setFormData(p => ({ ...p, severity: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {SEVERITIES.map(s => (
+                        <SelectItem key={s.value} value={s.value}>
+                          <span className={s.color}>{s.label}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              {/* Description */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <Label htmlFor="description">Description</Label>
                 <Textarea
-                  id="description"
-                  name="description"
-                  placeholder="Detailed description of the issue..."
-                  value={formData.description}
-                  onChange={handleInputChange}
-                  rows={4}
+                  id="description" placeholder="Describe the issue in detail — how long it's been there, safety concerns, etc."
+                  rows={4} value={formData.description}
+                  onChange={e => setFormData(p => ({ ...p, description: e.target.value }))}
                 />
-              </div>
-
-              {/* Location */}
-              <div className="space-y-4">
-                <Label>Location *</Label>
-                
-                {/* Country Selection */}
-                <div className="flex gap-2 mb-2">
-                  <Button
-                    type="button"
-                    variant={searchCountry === 'in' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setSearchCountry('in')}
-                    className="flex items-center"
-                  >
-                    🇮🇳 India
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={searchCountry === 'us' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setSearchCountry('us')}
-                    className="flex items-center"
-                  >
-                    🇺🇸 USA
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={searchCountry === 'global' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setSearchCountry('global')}
-                    className="flex items-center"
-                  >
-                    <Globe className="mr-1 h-3 w-3" />
-                    Global
-                  </Button>
-                </div>
-                
-                <div className="relative">
-                  <div className="flex gap-2">
-                    <div className="flex-1 relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        ref={searchInputRef}
-                        placeholder={
-                          searchCountry === 'in' 
-                            ? "Search for a location in India (e.g., 'Mumbai, Maharashtra')"
-                            : searchCountry === 'us'
-                            ? "Search for a location in USA (e.g., 'New York, NY')"
-                            : "Search for any location worldwide"
-                        }
-                        value={locationQuery}
-                        onChange={(e) => {
-                          handleLocationSearch(e.target.value);
-                          setShowSuggestions(true);
-                        }}
-                        onFocus={() => setShowSuggestions(true)}
-                        onBlur={() => {
-                          // Delay hiding suggestions to allow clicking on them
-                          setTimeout(() => setShowSuggestions(false), 200);
-                        }}
-                        className="pl-10"
-                        required
-                      />
-                      {isSearchingLocation && (
-                        <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-                      )}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={detectLocation}
-                      className="flex items-center"
-                    >
-                      <Navigation className="mr-2 h-4 w-4" />
-                      Detect
-                    </Button>
-                    {selectedLocation && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={clearLocation}
-                        className="flex items-center"
-                      >
-                        <X className="mr-2 h-4 w-4" />
-                        Clear
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Location suggestions dropdown */}
-                  {showSuggestions && locationSuggestions.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-background border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
-                      {locationSuggestions.map((suggestion, index) => (
-                        <button
-                          key={index}
-                          type="button"
-                          className="w-full px-4 py-3 text-left hover:bg-muted focus:bg-muted focus:outline-none border-b border-border last:border-b-0"
-                          onClick={() => selectLocation(suggestion)}
-                        >
-                          <div className="flex items-start gap-2">
-                            <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">
-                                {suggestion.display_name.split(',')[0]}
-                              </p>
-                              <p className="text-xs text-muted-foreground truncate">
-                                {suggestion.display_name.split(',').slice(1).join(',').trim()}
-                              </p>
-                              {suggestion.address && (
-                                <p className="text-xs text-blue-600 truncate">
-                                  {suggestion.address.state && `${suggestion.address.state}, `}
-                                  {suggestion.address.country}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* No results message */}
-                  {showSuggestions && locationQuery.length >= 3 && !isSearchingLocation && locationSuggestions.length === 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-background border border-border rounded-md shadow-lg p-4 text-center text-sm text-muted-foreground">
-                      No locations found. Try a different search term or change the country filter.
-                    </div>
-                  )}
-                </div>
-
-                {locationDetected && selectedLocation && (
-                  <div className="flex items-center text-sm text-green-600">
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    Location selected: {selectedLocation.display_name.split(',')[0]}
-                  </div>
-                )}
-
-                {/* Hidden input for form submission */}
-                <input
-                  type="hidden"
-                  name="location"
-                  value={formData.location}
-                />
-                <input
-                  type="hidden"
-                  name="address"
-                  value={formData.address}
-                />
-              </div>
-
-              {/* Image Upload */}
-              <div className="space-y-4">
-                <Label>Photos (Optional)</Label>
-                <p className="text-sm text-muted-foreground">
-                  Add photos to help illustrate the issue (max 5 images)
-                </p>
-                
-                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleImageUpload}
-                    className="hidden"
-                    id="image-upload"
-                    disabled={images.length >= 5}
-                  />
-                  <label
-                    htmlFor="image-upload"
-                    className={`cursor-pointer ${images.length >= 5 ? 'opacity-50' : ''}`}
-                  >
-                    <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Click to upload or drag and drop
-                    </p>
-                  </label>
-                </div>
-
-                {images.length > 0 && (
-                  <div className="grid grid-cols-2 gap-4">
-                    {images.map((image, index) => (
-                      <div key={index} className="relative">
-                        <img
-                          src={URL.createObjectURL(image)}
-                          alt={`Upload ${index + 1}`}
-                          className="w-full h-24 object-cover rounded-lg border"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeImage(index)}
-                          className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 h-6 w-6 flex items-center justify-center"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Submit Button */}
-              <div className="pt-6">
-                <Button 
-                  type="submit" 
-                  className="w-full" 
-                  disabled={isLoading}
-                >
-                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {isLoading ? 'Submitting...' : 'Submit Issue Report'}
-                </Button>
               </div>
             </CardContent>
-          </form>
-        </Card>
+          </Card>
+
+          {/* Photos */}
+          <Card>
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Camera className="h-5 w-5" /> Photos
+                <span className="text-sm font-normal text-muted-foreground ml-auto">{images.length}/5</span>
+              </CardTitle>
+              <CardDescription>Clear photos dramatically speed up issue resolution.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Dropzone */}
+              {images.length < 5 && (
+                <div
+                  ref={dropzoneRef}
+                  onDragOver={onDragOver}
+                  onDragLeave={onDragLeave}
+                  onDrop={onDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 cursor-pointer transition-all
+                    ${isDragging
+                      ? 'border-primary bg-primary/5 scale-[1.01]'
+                      : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                    }`}
+                >
+                  <div className={`rounded-full p-3 mb-3 transition-colors ${isDragging ? 'bg-primary/10' : 'bg-muted'}`}>
+                    <ImagePlus className={`h-6 w-6 ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
+                  </div>
+                  <p className="text-sm font-medium">
+                    {isDragging ? 'Drop photos here' : 'Click or drag photos here'}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">JPEG, PNG, WebP · up to 5 MB each</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file" accept="image/*" multiple className="hidden"
+                    onChange={e => addFiles(e.target.files)}
+                  />
+                </div>
+              )}
+
+              {/* Image grid preview */}
+              {images.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {images.map((img, idx) => (
+                    <div key={idx} className="group relative aspect-square rounded-lg overflow-hidden border bg-muted">
+                      <img
+                        src={img.previewUrl}
+                        alt={`Preview ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Overlay on hover */}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={() => removeImage(idx)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity bg-destructive text-white rounded-full p-1.5 shadow-lg"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {/* File name */}
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <p className="text-white text-[10px] truncate">{img.file.name}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {/* Add more button if < 5 */}
+                  {images.length < 5 && (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="aspect-square rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
+                    >
+                      <Plus className="h-5 w-5 mb-1" />
+                      <span className="text-xs">Add more</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Location */}
+          <Card>
+            <CardHeader className="pb-4">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MapPin className="h-5 w-5" /> Location <span className="text-destructive">*</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Country filter */}
+              <div className="flex gap-2">
+                {[['in','🇮🇳 India'],['us','🇺🇸 USA'],['global','🌍 Global']] .map(([v, l]) => (
+                  <Button
+                    key={v} type="button" size="sm"
+                    variant={countryFilter === v ? 'default' : 'outline'}
+                    onClick={() => setCountryFilter(v as 'in' | 'us' | 'global')}
+                  >{l}</Button>
+                ))}
+              </div>
+
+              {/* Search + Detect */}
+              <div className="relative flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    className="pl-9 pr-8"
+                    placeholder={countryFilter === 'in' ? "Search in India..." : countryFilter === 'us' ? "Search in USA..." : "Search anywhere..."}
+                    value={locationQuery}
+                    onChange={e => handleLocationInput(e.target.value)}
+                    onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                  />
+                  {isSearching && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                </div>
+                <Button type="button" variant="outline" onClick={detectLocation} disabled={locationStatus === 'detecting'}>
+                  {locationStatus === 'detecting'
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <Navigation className="h-4 w-4" />}
+                  <span className="ml-2 hidden sm:inline">Detect</span>
+                </Button>
+                {locationStatus === 'set' && (
+                  <Button type="button" variant="ghost" size="icon" onClick={clearLocation}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+
+              {/* Suggestions dropdown */}
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="relative z-20 -mt-2">
+                  <div className="absolute w-full bg-background border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {suggestions.map((s, i) => (
+                      <button
+                        key={i} type="button"
+                        className="w-full text-left px-4 py-3 hover:bg-muted flex gap-3 items-start border-b last:border-b-0"
+                        onClick={() => selectSuggestion(s)}
+                      >
+                        <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{s.display_name.split(',')[0]}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {s.display_name.split(',').slice(1, 3).join(', ')}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Confirmed location */}
+              {locationStatus === 'set' && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
+                  <CheckCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <p className="text-sm leading-relaxed">{formData.address}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Submit */}
+          <Button type="submit" className="w-full h-12 text-base" disabled={isLoading}>
+            {isLoading ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting report…</>
+            ) : (
+              <><Upload className="mr-2 h-4 w-4" /> Submit Issue Report</>
+            )}
+          </Button>
+        </form>
       </div>
     </div>
   );

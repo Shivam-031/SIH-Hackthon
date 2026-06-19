@@ -1,326 +1,257 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { Navbar } from '@/components/Navbar';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import apiService from '@/services/api';
+import type { Issue } from '@/types';
+import { STATUS_COLOR, STATUS_LABELS, CATEGORY_EMOJI, CATEGORY_LABELS } from '@/lib/issueHelpers';
 import {
-  BarChart3,
-  Clock,
-  CheckCircle,
-  AlertTriangle,
-  Users,
-  MapPin,
-  Filter,
-  Download,
-  TrendingUp,
-  MessageSquare
+  BarChart3, Clock, CheckCircle, AlertTriangle, Users,
+  MapPin, Download, TrendingUp, RefreshCw, ChevronRight,
+  Search, Filter, Loader2, ShieldCheck
 } from 'lucide-react';
 
 const OfficialDashboard = () => {
   const { user } = useAuth();
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedStatus, setSelectedStatus] = useState('all');
+  const { toast } = useToast();
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [stats, setStats] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  // Mock data - replace with actual API calls
-  const stats = [
-    { label: "Total Issues", value: "248", icon: AlertTriangle, color: "text-primary" },
-    { label: "Pending", value: "45", icon: Clock, color: "text-warning" },
-    { label: "In Progress", value: "38", icon: BarChart3, color: "text-info" },
-    { label: "Resolved", value: "165", icon: CheckCircle, color: "text-success" }
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [issueRes, dashRes] = await Promise.all([
+        apiService.getAdminIssues({
+          page,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+          category: categoryFilter !== 'all' ? categoryFilter : undefined,
+        }),
+        apiService.getAdminDashboard(),
+      ]);
+      setIssues(issueRes.data.issues);
+      setTotalPages(issueRes.data.pagination.pages);
+      setStats(dashRes.data.stats);
+    } catch { /* silent */ } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [page, statusFilter, categoryFilter]);
+
+  const updateStatus = async (id: string, status: string) => {
+    setUpdatingId(id);
+    try {
+      await apiService.updateIssueStatus(id, status);
+      toast({ title: '✅ Status updated' });
+      load();
+    } catch { toast({ title: 'Update failed', variant: 'destructive' }); }
+    finally { setUpdatingId(null); }
+  };
+
+  const filtered = issues.filter(i =>
+    !search || i.title.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const STAT_CARDS = [
+    { key: 'totalIssues',   label: 'Total Issues',  icon: AlertTriangle, color: 'text-primary',   bg: 'bg-primary/10' },
+    { key: 'pendingIssues', label: 'Pending',        icon: Clock,         color: 'text-amber-600', bg: 'bg-amber-50' },
+    { key: 'openIssues',    label: 'Open',           icon: BarChart3,     color: 'text-blue-600',  bg: 'bg-blue-50' },
+    { key: 'closedIssues',  label: 'Closed',         icon: CheckCircle,   color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { key: 'totalUsers',    label: 'Citizens',       icon: Users,         color: 'text-purple-600', bg: 'bg-purple-50' },
+    { key: 'criticalIssues',label: 'Critical',       icon: ShieldCheck,   color: 'text-red-600',   bg: 'bg-red-50' },
   ];
-
-  const issues = [
-    {
-      id: '1',
-      title: 'Multiple potholes on Highway 42',
-      category: 'pothole',
-      status: 'pending',
-      priority: 'high',
-      reporter: 'John Doe',
-      location: 'Highway 42, Sector 15',
-      date: '2024-01-18',
-      upvotes: 24,
-      comments: 8,
-      verified: true
-    },
-    {
-      id: '2',
-      title: 'Street light not working',
-      category: 'streetlight',
-      status: 'in-progress',
-      priority: 'medium',
-      reporter: 'Sarah Johnson',
-      location: 'Park Avenue, Block C',
-      date: '2024-01-17',
-      upvotes: 12,
-      comments: 3,
-      verified: true
-    },
-    {
-      id: '3',
-      title: 'Garbage collection needed',
-      category: 'garbage',
-      status: 'acknowledged',
-      priority: 'low',
-      reporter: 'Mike Wilson',
-      location: 'Elm Street',
-      date: '2024-01-16',
-      upvotes: 7,
-      comments: 2,
-      verified: false
-    }
-  ];
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-warning/10 text-warning-foreground';
-      case 'acknowledged': return 'bg-info/10 text-info-foreground';
-      case 'in-progress': return 'bg-primary/10 text-primary-foreground';
-      case 'resolved': return 'bg-success/10 text-success-foreground';
-      default: return 'bg-muted text-muted-foreground';
-    }
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'bg-destructive/10 text-destructive-foreground';
-      case 'medium': return 'bg-warning/10 text-warning-foreground';
-      case 'low': return 'bg-success/10 text-success-foreground';
-      default: return 'bg-muted text-muted-foreground';
-    }
-  };
-
-  const updateIssueStatus = (issueId: string, newStatus: string) => {
-    // Mock function - replace with actual API call
-    console.log(`Updating issue ${issueId} to status: ${newStatus}`);
-  };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-muted/30">
       <Navbar />
-      
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">
-              Official Dashboard
-            </h1>
-            <p className="text-muted-foreground">
-              Manage and resolve civic issues in your jurisdiction
-            </p>
+            <h1 className="text-2xl font-bold">Official Dashboard</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">Manage and resolve civic issues across your jurisdiction.</p>
           </div>
-          
-          <div className="flex flex-col sm:flex-row gap-3 mt-4 md:mt-0">
-            <Button variant="outline" className="flex items-center">
-              <Download className="mr-2 h-4 w-4" />
-              Export Report
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
             </Button>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {stats.map((stat, index) => (
-            <Card key={index}>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-bold">{stat.value}</p>
-                    <p className="text-xs text-muted-foreground">{stat.label}</p>
-                  </div>
-                  <stat.icon className={`h-5 w-5 ${stat.color}`} />
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+          {STAT_CARDS.map(s => (
+            <Card key={s.key} className="shadow-sm border-0">
+              <CardContent className="pt-4 pb-4">
+                <div className={`inline-flex p-2 rounded-lg mb-2 ${s.bg}`}>
+                  <s.icon className={`h-4 w-4 ${s.color}`} />
                 </div>
+                <p className="text-xl font-bold">{stats[s.key] ?? '—'}</p>
+                <p className="text-xs text-muted-foreground">{s.label}</p>
               </CardContent>
             </Card>
           ))}
         </div>
 
-        {/* Main Content */}
         <Tabs defaultValue="issues" className="space-y-6">
-          <TabsList>
+          <TabsList className="bg-background border">
             <TabsTrigger value="issues">Issue Management</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
-            <TabsTrigger value="departments">Departments</TabsTrigger>
+            <TabsTrigger value="map">Map View</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="issues" className="space-y-6">
-            {/* Filters */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Filter className="mr-2 h-5 w-5" />
-                  Filters
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">Category</label>
-                    <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="All categories" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Categories</SelectItem>
-                        <SelectItem value="pothole">Potholes</SelectItem>
-                        <SelectItem value="streetlight">Street Lights</SelectItem>
-                        <SelectItem value="garbage">Garbage</SelectItem>
-                        <SelectItem value="water-leak">Water Leaks</SelectItem>
-                        <SelectItem value="road-damage">Road Damage</SelectItem>
-                        <SelectItem value="traffic-signal">Traffic Signal</SelectItem>
-                        <SelectItem value="drainage">Drainage Issue</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+          <TabsContent value="issues">
+            {/* Filter bar */}
+            <div className="flex flex-wrap gap-3 mb-4">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search issues…"
+                  className="pl-9 h-9"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1); }}>
+                <SelectTrigger className="h-9 w-40 text-sm"><SelectValue placeholder="All statuses" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {['pending','under-review','verified','assigned','work-started','completed','closed','rejected'].map(s => (
+                    <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={categoryFilter} onValueChange={v => { setCategoryFilter(v); setPage(1); }}>
+                <SelectTrigger className="h-9 w-40 text-sm"><SelectValue placeholder="All categories" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {['road-damage','garbage','water-leakage','electricity','street-light','pothole','tree-fallen','pollution','other'].map(c => (
+                    <SelectItem key={c} value={c}>{CATEGORY_EMOJI[c]} {CATEGORY_LABELS[c] || c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">Status</label>
-                    <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="All statuses" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Statuses</SelectItem>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="acknowledged">Acknowledged</SelectItem>
-                        <SelectItem value="in-progress">In Progress</SelectItem>
-                        <SelectItem value="resolved">Resolved</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+            {/* Issues table */}
+            <Card className="shadow-sm border-0 overflow-hidden">
+              {loading ? (
+                <div className="flex items-center justify-center h-48">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="text-center py-16 text-muted-foreground">
+                  <Filter className="h-10 w-10 mx-auto mb-3 opacity-20" />
+                  <p className="text-sm">No issues match your filters.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/40">
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Issue</th>
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs hidden md:table-cell">Category</th>
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Status</th>
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs hidden lg:table-cell">Location</th>
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs hidden md:table-cell">Upvotes</th>
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Update</th>
+                        <th className="px-4 py-3" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {filtered.map(issue => (
+                        <tr key={issue._id} className="hover:bg-muted/30 transition-colors">
+                          <td className="px-4 py-3">
+                            <p className="font-medium truncate max-w-[200px]">{issue.title}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {new Date(issue.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 hidden md:table-cell">
+                            <span className="text-sm">{CATEGORY_EMOJI[issue.category]} {CATEGORY_LABELS[issue.category] || issue.category}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge className={`text-[10px] border ${STATUS_COLOR[issue.status] || 'bg-muted'}`}>
+                              {STATUS_LABELS[issue.status] || issue.status}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3 hidden lg:table-cell">
+                            <span className="text-xs text-muted-foreground truncate max-w-[150px] block">
+                              {issue.location.address?.split(',')[0] || '—'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 hidden md:table-cell text-sm">
+                            <span className="flex items-center gap-1">
+                              <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+                              {issue.upvotes?.length ?? 0}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1">
+                              <Select
+                                value={issue.status}
+                                onValueChange={v => updateStatus(issue._id, v)}
+                                disabled={updatingId === issue._id}
+                              >
+                                <SelectTrigger className="h-7 text-xs w-32">
+                                  {updatingId === issue._id
+                                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                                    : <SelectValue />
+                                  }
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {['pending','under-review','verified','assigned','work-started','completed','closed','rejected'].map(s => (
+                                    <SelectItem key={s} value={s} className="text-xs">{STATUS_LABELS[s]}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Link to={`/issue/${issue._id}`}>
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                                <ChevronRight className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">Priority</label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="All priorities" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Priorities</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="low">Low</SelectItem>
-                      </SelectContent>
-                    </Select>
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-4 py-3 border-t">
+                  <span className="text-xs text-muted-foreground">Page {page} of {totalPages}</span>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
+                    <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Issues List */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent Issues</CardTitle>
-                <CardDescription>
-                  {issues.length} issues found
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {issues.map((issue) => (
-                  <div key={issue.id} className="border rounded-lg p-4">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-3">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-foreground mb-1">{issue.title}</h3>
-                        <p className="text-sm text-muted-foreground flex items-center">
-                          <MapPin className="mr-1 h-3 w-3" />
-                          {issue.location}
-                        </p>
-                      </div>
-                      
-                      <div className="flex flex-wrap gap-2 mt-2 lg:mt-0">
-                        <Badge className={getPriorityColor(issue.priority)}>
-                          {issue.priority} priority
-                        </Badge>
-                        <Badge className={getStatusColor(issue.status)}>
-                          {issue.status}
-                        </Badge>
-                        {issue.verified && (
-                          <Badge variant="outline" className="text-success">
-                            Verified
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between text-sm text-muted-foreground">
-                      <div className="flex items-center space-x-4">
-                        <span>Reported by {issue.reporter}</span>
-                        <span>{issue.date}</span>
-                        <span className="flex items-center">
-                          <TrendingUp className="mr-1 h-3 w-3" />
-                          {issue.upvotes}
-                        </span>
-                        <span className="flex items-center">
-                          <MessageSquare className="mr-1 h-3 w-3" />
-                          {issue.comments}
-                        </span>
-                      </div>
-
-                      <div className="flex gap-2 mt-2 lg:mt-0">
-                        <Select defaultValue={issue.status} onValueChange={(value) => updateIssueStatus(issue.id, value)}>
-                          <SelectTrigger className="w-32">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pending">Pending</SelectItem>
-                            <SelectItem value="acknowledged">Acknowledged</SelectItem>
-                            <SelectItem value="in-progress">In Progress</SelectItem>
-                            <SelectItem value="resolved">Resolved</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        
-                        <Button size="sm" variant="outline">
-                          View Details
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
+              )}
             </Card>
           </TabsContent>
 
-          <TabsContent value="analytics">
-            <Card>
-              <CardHeader>
-                <CardTitle>Analytics Dashboard</CardTitle>
-                <CardDescription>
-                  Insights and trends for civic issue management
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-12">
-                  <BarChart3 className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">Analytics Coming Soon</h3>
-                  <p className="text-muted-foreground">
-                    Comprehensive analytics and reporting features will be available here.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="departments">
-            <Card>
-              <CardHeader>
-                <CardTitle>Department Management</CardTitle>
-                <CardDescription>
-                  Assign issues to relevant departments and track progress
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-12">
-                  <Users className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">Department Features Coming Soon</h3>
-                  <p className="text-muted-foreground">
-                    Department assignment and management tools will be available here.
-                  </p>
-                </div>
+          <TabsContent value="map">
+            <Card className="shadow-sm border-0">
+              <CardContent className="p-6 text-center">
+                <MapPin className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-40" />
+                <p className="font-medium mb-1">Full Map View</p>
+                <p className="text-sm text-muted-foreground mb-4">See all issues plotted on an interactive map with filters.</p>
+                <Button asChild><Link to="/map">Open Map</Link></Button>
               </CardContent>
             </Card>
           </TabsContent>
