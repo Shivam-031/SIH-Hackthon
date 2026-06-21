@@ -80,8 +80,8 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-muted/30 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-6">
+    <div className="min-h-screen bg-muted/30 flex items-center justify-center px-4 py-8">
+      <div className="w-full max-w-sm space-y-5 sm:space-y-6">
 
         {/* Logo + heading */}
         <div className="text-center">

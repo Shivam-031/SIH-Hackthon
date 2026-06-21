@@ -220,7 +220,7 @@ const Register = () => {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-muted/30 flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-sm space-y-5">
+      <div className="w-full max-w-sm space-y-4 sm:space-y-5">
 
         {/* Logo */}
         <div className="text-center">
@@ -369,7 +369,7 @@ const Register = () => {
               <form onSubmit={handleVerifyOTP} className="space-y-5">
                 {/* 6-digit OTP boxes */}
                 <div>
-                  <div className="flex gap-2 justify-center" onPaste={handleOtpPaste}>
+                  <div className="flex gap-1.5 sm:gap-2 justify-center" onPaste={handleOtpPaste}>
                     {otp.map((digit, idx) => (
                       <input
                         key={idx}

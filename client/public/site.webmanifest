@@ -1,0 +1,12 @@
+{
+  "name": "CivicConnect",
+  "short_name": "CivicConnect",
+  "description": "Report civic issues and make your city better",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

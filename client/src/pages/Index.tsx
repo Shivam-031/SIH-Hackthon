@@ -9,6 +9,23 @@ import {
   CheckCircle, ArrowRight, MessageSquare, Zap
 } from 'lucide-react';
 
+// Inline logo mark
+const LogoMark = ({ size = 40 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="ilmg" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#2563eb"/>
+        <stop offset="100%" stopColor="#7c3aed"/>
+      </linearGradient>
+    </defs>
+    <rect width="32" height="32" rx="8" fill="url(#ilmg)"/>
+    <path d="M16 4C11.6 4 8 7.6 8 12C8 17.5 14.4 23.6 15.5 24.6C15.8 24.9 16.2 24.9 16.5 24.6C17.6 23.6 24 17.5 24 12C24 7.6 20.4 4 16 4Z" fill="white" opacity="0.95"/>
+    <circle cx="16" cy="12" r="4.5" fill="#2563eb"/>
+    <polyline points="13.5,12 15,13.5 18.5,10" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <ellipse cx="16" cy="26.5" rx="3" ry="1.2" fill="black" opacity="0.15"/>
+  </svg>
+);
+
 const Index = () => {
   const { user } = useAuth();
 
@@ -33,22 +50,20 @@ const Index = () => {
       <Navbar />
 
       {/* Hero */}
-      <section className="relative overflow-hidden py-24 px-4">
+      <section className="relative overflow-hidden py-14 sm:py-24 px-4">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-purple-500/5 pointer-events-none" />
         <div className="container mx-auto max-w-4xl text-center relative">
           <div className="inline-flex items-center gap-2 bg-primary/10 text-primary rounded-full px-4 py-1.5 text-sm font-medium mb-6">
             <Zap className="h-3.5 w-3.5" /> Community-powered civic tech
           </div>
           <div className="flex items-center justify-center gap-3 mb-6">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/30">
-              <MapPin className="h-7 w-7 text-primary-foreground" />
-            </div>
-            <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight">CivicConnect</h1>
+            <LogoMark size={52} />
+            <h1 className="text-3xl sm:text-5xl md:text-6xl font-extrabold tracking-tight">CivicConnect</h1>
           </div>
-          <h2 className="text-xl md:text-2xl text-muted-foreground mb-4 font-medium">
+          <h2 className="text-base sm:text-xl md:text-2xl text-muted-foreground mb-3 sm:mb-4 font-medium">
             Bridging Communities and Government for Better Cities
           </h2>
-          <p className="text-muted-foreground mb-10 max-w-xl mx-auto leading-relaxed">
+          <p className="text-muted-foreground mb-7 sm:mb-10 max-w-xl mx-auto leading-relaxed text-sm sm:text-base">
             Report potholes, broken streetlights, water leaks and more — with photos and location.
             Watch your city respond. Earn points for contributing.
           </p>
@@ -72,13 +87,13 @@ const Index = () => {
       </section>
 
       {/* Stats */}
-      <section className="py-14 px-4 border-y bg-muted/30">
-        <div className="container mx-auto max-w-4xl">
+      <section className="py-10 sm:py-14 px-4 border-y bg-muted/30">
+        <div className="container mx-auto max-w-4xl px-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {stats.map((s, i) => (
               <div key={i} className="text-center">
                 <s.icon className={`h-6 w-6 mx-auto mb-2 ${s.color}`} />
-                <p className="text-3xl font-bold">{s.value}</p>
+                <p className="text-2xl sm:text-3xl font-bold">{s.value}</p>
                 <p className="text-sm text-muted-foreground">{s.label}</p>
               </div>
             ))}
@@ -87,15 +102,15 @@ const Index = () => {
       </section>
 
       {/* Features */}
-      <section className="py-20 px-4">
-        <div className="container mx-auto max-w-5xl">
+      <section className="py-12 sm:py-20 px-4">
+        <div className="container mx-auto max-w-5xl px-4">
           <div className="text-center mb-12">
-            <h3 className="text-3xl font-bold mb-3">How It Works</h3>
+            <h3 className="text-xl sm:text-3xl font-bold mb-3">How It Works</h3>
             <p className="text-muted-foreground max-w-xl mx-auto">
               Simple tools for civic engagement that actually get things fixed.
             </p>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
             {features.map((f, i) => (
               <Card key={i} className="border-0 shadow-sm hover:shadow-md transition-shadow group">
                 <CardContent className="pt-6">
@@ -112,9 +127,9 @@ const Index = () => {
       </section>
 
       {/* CTA */}
-      <section className="py-20 px-4 bg-gradient-to-r from-primary via-primary to-purple-600">
-        <div className="container mx-auto max-w-2xl text-center text-white">
-          <h3 className="text-3xl font-bold mb-3">Ready to Make a Difference?</h3>
+      <section className="py-12 sm:py-20 px-4 bg-gradient-to-r from-primary via-primary to-purple-600">
+        <div className="container mx-auto max-w-2xl text-center text-white px-4">
+          <h3 className="text-xl sm:text-3xl font-bold mb-3">Ready to Make a Difference?</h3>
           <p className="text-white/80 mb-8">
             Join thousands of citizens already making their neighbourhoods better.
           </p>
@@ -137,11 +152,9 @@ const Index = () => {
 
       {/* Footer */}
       <footer className="border-t py-10 px-4 bg-background">
-        <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
+        <div className="container mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded bg-primary">
-              <MapPin className="h-3.5 w-3.5 text-primary-foreground" />
-            </div>
+            <LogoMark size={24} />
             <span className="font-semibold text-foreground">CivicConnect</span>
           </div>
           <p>© {new Date().getFullYear()} CivicConnect. Built for better communities.</p>

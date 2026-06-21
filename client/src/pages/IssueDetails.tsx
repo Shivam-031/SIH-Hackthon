@@ -133,7 +133,7 @@ const IssueDetails = () => {
           className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center"
           onClick={() => setLightboxIdx(null)}
         >
-          <button className="absolute top-4 right-4 text-white/80 hover:text-white">
+          <button className="absolute top-4 right-4 text-white/80 hover:text-white p-2 touch-action-manipulation">
             <X className="h-8 w-8" />
           </button>
           <button
@@ -160,7 +160,7 @@ const IssueDetails = () => {
         </div>
       )}
 
-      <div className="container mx-auto px-4 py-6 max-w-5xl">
+      <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-5xl">
         {/* Top nav */}
         <div className="flex items-center justify-between mb-6">
           <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
@@ -171,7 +171,7 @@ const IssueDetails = () => {
           </Button>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
           {/* Main */}
           <div className="lg:col-span-2 space-y-5">
             {/* Title card */}
@@ -191,7 +191,7 @@ const IssueDetails = () => {
                   </Badge>
                 </div>
 
-                <h1 className="text-xl font-bold text-foreground mb-3">{issue.title}</h1>
+                <h1 className="text-lg sm:text-xl font-bold text-foreground mb-3">{issue.title}</h1>
 
                 {issue.description && (
                   <p className="text-muted-foreground leading-relaxed text-sm">{issue.description}</p>

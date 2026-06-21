@@ -81,19 +81,19 @@ const Profile = () => {
   return (
     <div className="min-h-screen bg-muted/30">
       <Navbar />
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <h1 className="text-2xl font-bold mb-6">My Profile</h1>
+      <div className="container mx-auto px-3 sm:px-4 py-5 sm:py-8 max-w-4xl">
+        <h1 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">My Profile</h1>
 
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
           {/* Left column — avatar + points */}
           <div className="space-y-5">
             {/* Avatar card */}
             <Card className="shadow-sm border-0">
               <CardContent className="pt-6 flex flex-col items-center gap-4">
                 <div className="relative">
-                  <Avatar className="h-24 w-24">
+                  <Avatar className="h-20 w-20 sm:h-24 sm:w-24">
                     <AvatarImage src={avatarPreview || user?.profileImage?.url || user?.avatar} />
-                    <AvatarFallback className="text-2xl font-bold bg-primary/10 text-primary">
+                    <AvatarFallback className="text-xl sm:text-2xl font-bold bg-primary/10 text-primary">
                       {user?.name?.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>

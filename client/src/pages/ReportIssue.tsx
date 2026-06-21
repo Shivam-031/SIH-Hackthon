@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import apiService from '@/services/api';
 import {
   MapPin, Camera, Upload, Loader2, X, CheckCircle, Plus,
-  Search, Navigation, Globe, ImagePlus, AlertCircle
+  Search, Navigation, ImagePlus, AlertCircle
 } from 'lucide-react';
 
 const CATEGORIES = [
@@ -199,9 +199,9 @@ const ReportIssue = () => {
   return (
     <div className="min-h-screen bg-muted/30">
       <Navbar />
-      <div className="container mx-auto px-4 py-8 max-w-2xl">
+      <div className="container mx-auto px-3 sm:px-4 py-5 sm:py-8 max-w-2xl">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-foreground">Report an Issue</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Report an Issue</h1>
           <p className="text-muted-foreground mt-1">
             Help your community by documenting civic problems with photos and location.
           </p>
