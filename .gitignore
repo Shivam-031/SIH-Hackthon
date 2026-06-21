@@ -11,7 +11,7 @@ lerna-debug.log*
 *.md
 *.env
 *.env.example
-.gitignore
+*.gitignore
 dist
 dist-ssr
 *.local
